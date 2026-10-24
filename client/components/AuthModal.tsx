@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Mail, Lock, User, GraduationCap, Briefcase, ChevronRight, Settings, CheckCircle, Clock, Eye, EyeOff } from 'lucide-react';
-import { authApi, devApi, handleApiError } from '@/lib/api';
+import { X, Mail, Lock, User, GraduationCap, Briefcase, ChevronRight, Settings, Clock, Eye, EyeOff } from 'lucide-react';
+import { authApi, handleApiError } from '@/lib/api';
 import { publishAuthUser } from '@/lib/useAuth';
 import {
   validateEmail,
@@ -25,11 +25,8 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showDevPanel, setShowDevPanel] = useState(false);
-  const [devUsers, setDevUsers] = useState<any[]>([]);
-  const [devLoading, setDevLoading] = useState(false);
-  
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -39,24 +36,6 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     department: '',
     year: 1,
   });
-
-  const fetchDevUsers = async () => {
-    setDevLoading(true);
-    try {
-      const users = await devApi.getAllUsers();
-      setDevUsers(users);
-    } catch (err) {
-      console.error('Failed to fetch dev users:', err);
-    } finally {
-      setDevLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (showDevPanel && isOpen) {
-      fetchDevUsers();
-    }
-  }, [showDevPanel, isOpen]);
 
   if (!isOpen) return null;
 
@@ -71,6 +50,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setNotice('');
     setLoading(true);
 
     try {
@@ -99,6 +79,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setNotice('');
 
     const checks = [
       validateEmail(formData.email),
@@ -122,23 +103,16 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         regNo: normalizeRegNo(formData.regNo),
       } as any);
       setMode('login');
-      setError('Registration successful! Use the dev panel below to approve your account.');
-      if (showDevPanel) fetchDevUsers();
+      // Said as the good news it is. This went through setError, so a
+      // successful registration was announced in red error styling - and it
+      // pointed people at a developer panel that had no business being in
+      // front of them.
+      setNotice('Registration successful. An admin will review your account shortly.');
     } catch (err: any) {
       const errorMsg = handleApiError(err);
       setError(errorMsg);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleApprove = async (id: string, currentStatus: string) => {
-    const nextStatus = currentStatus === 'approved' ? 'pending' : 'approved';
-    try {
-      await devApi.updateUserStatus(id, nextStatus);
-      fetchDevUsers();
-    } catch (err) {
-      console.error('Failed to update status:', err);
     }
   };
 
@@ -208,20 +182,31 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             </button>
           </div>
 
+          {/*
+            * Good news and bad news are separate state now. This used to read
+            * the error string for the word "successful" to decide whether to
+            * paint itself green - so the colour of the message depended on
+            * how the message happened to be worded.
+            */}
           <AnimatePresence mode="wait">
-            {error && (
-              <motion.div 
+            {(notice || error) && (
+              <motion.div
+                key={notice ? 'notice' : 'error'}
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 className={`p-4 rounded-2xl text-sm font-bold mb-6 flex items-center gap-3 border ${
-                  error.includes('successful') 
-                  ? 'bg-green-500/10 border-green-500/20 text-green-400' 
-                  : 'bg-red-500/10 border-red-500/20 text-red-400'
+                  notice
+                    ? 'bg-green-500/10 border-green-500/20 text-green-400'
+                    : 'bg-red-500/10 border-red-500/20 text-red-400'
                 }`}
               >
-                <div className={`w-2 h-2 rounded-full animate-pulse ${error.includes('successful') ? 'bg-green-400' : 'bg-red-400'}`} />
-                {error}
+                <div
+                  className={`w-2 h-2 rounded-full animate-pulse ${
+                    notice ? 'bg-green-400' : 'bg-red-400'
+                  }`}
+                />
+                {notice || error}
               </motion.div>
             )}
           </AnimatePresence>
@@ -304,64 +289,6 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             </motion.button>
           </form>
 
-          {/* Dev Approval Panel */}
-          <div className="mt-10 border-t border-white/10 pt-6">
-            <button 
-              onClick={() => setShowDevPanel(!showDevPanel)}
-              className="flex items-center gap-2 text-white/40 hover:text-[#f5b800] text-[10px] font-black uppercase tracking-widest transition-colors mb-4"
-            >
-              <Settings size={12} className={showDevPanel ? 'animate-spin-slow' : ''} />
-              Developer Tools
-            </button>
-
-            <AnimatePresence>
-              {showDevPanel && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="bg-white/5 rounded-2xl p-4 border border-white/10 space-y-3">
-                    <div className="flex justify-between items-center mb-2">
-                       <h4 className="text-[10px] font-bold text-white/40 uppercase">Registration Pipeline</h4>
-                       <button onClick={fetchDevUsers} className="text-[10px] text-[#f5b800] hover:underline">Refresh</button>
-                    </div>
-                    
-                    {devLoading ? (
-                       <p className="text-[10px] text-white/30 italic text-center py-4">Scanning records...</p>
-                    ) : devUsers.length === 0 ? (
-                       <p className="text-[10px] text-white/30 italic text-center py-4">No pending registrations found.</p>
-                    ) : (
-                      <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
-                        {devUsers.map((u: any) => (
-                          <div key={u.id} className="flex items-center justify-between p-2 bg-white/5 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
-                            <div className="flex flex-col">
-                              <span className="text-[10px] font-bold text-white truncate max-w-[120px]">{u.email}</span>
-                              <span className={`text-[8px] font-black uppercase flex items-center gap-1 ${u.status === 'approved' ? 'text-green-400' : 'text-amber-400'}`}>
-                                {u.status === 'approved' ? <CheckCircle size={8} /> : <Clock size={8} />}
-                                {u.status}
-                              </span>
-                            </div>
-                            <button
-                              onClick={() => handleApprove(u.id, u.status)}
-                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
-                                u.status === 'approved' 
-                                ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' 
-                                : 'bg-[#f5b800] text-black hover:scale-105 active:scale-95'
-                              }`}
-                            >
-                              {u.status === 'approved' ? 'Revoke' : 'Approve'}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
         </div>
       </motion.div>
     </div>

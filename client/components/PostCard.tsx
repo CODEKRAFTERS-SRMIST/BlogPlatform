@@ -13,10 +13,18 @@ interface PostCardProps {
   onLike: (id: string) => void;
   isLiked: boolean;
   showDelete?: boolean;
+  /**
+   * Liking, sharing and the comment count, all together.
+   *
+   * My Library shows the author their own work, including drafts and
+   * rejected stories. None of those have a public page, so there is nothing
+   * to share and nobody to like them.
+   */
+  showActions?: boolean;
 }
 
 const PostCard = forwardRef<HTMLDivElement, PostCardProps>(
-  ({ post, onClick, onDelete, onLike, isLiked, showDelete = false }, ref) => {
+  ({ post, onClick, onDelete, onLike, isLiked, showDelete = false, showActions = true }, ref) => {
     const [showShareModal, setShowShareModal] = useState(false);
     const [coverFailed, setCoverFailed] = useState(false);
     const cover = post.image || post.coverImage;
@@ -119,6 +127,7 @@ const PostCard = forwardRef<HTMLDivElement, PostCardProps>(
               </div>
               <span className="truncate max-w-[72px] sm:max-w-[100px]">{post.author}</span>
             </div>
+            {showActions && (
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <button 
                 onClick={(e) => { e.stopPropagation(); onLike(post.id); }}
@@ -149,6 +158,7 @@ const PostCard = forwardRef<HTMLDivElement, PostCardProps>(
                 </button>
               )}
             </div>
+            )}
           </div>
         </div>
 
@@ -170,7 +180,11 @@ const PostCard = forwardRef<HTMLDivElement, PostCardProps>(
             whileHover={{ scale: 1.1, backgroundColor: '#fee2e2', color: '#ef4444' }}
             whileTap={{ scale: 0.9 }}
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-white/90 backdrop-blur border border-red-200 text-red-500 flex items-center justify-center shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50"
+            /* Visible by default, hover-revealed only where there is a
+                pointer to hover with. It used to be opacity-0 until hover on
+                every screen, which on a phone meant the author could never
+                reach it at all. */
+            className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-white/90 backdrop-blur border border-red-200 text-red-500 flex items-center justify-center shadow-md opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity hover:bg-red-50"
             title="Delete Blog"
           >
             <Trash2 size={16} />

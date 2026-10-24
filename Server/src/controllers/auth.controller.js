@@ -58,6 +58,13 @@ export const register = asyncHandler(async (req, res) => {
     );
   }
 
+  // The same minimum the rest of the app enforces. Registration had no check
+  // at all, so an account could be created with a two-character password - or
+  // with none, leaving an account nobody can ever sign in to.
+  if (!password || String(password).length < 8) {
+    throw new AppError('Password must be at least 8 characters', 400, 'VALIDATION_ERROR');
+  }
+
   const result = await authService.register({
     name,
     email,

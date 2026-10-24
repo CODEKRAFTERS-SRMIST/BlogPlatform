@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Settings as SettingsIcon, LogOut, User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/lib/useAuth';
 import { authApi, handleApiError } from '@/lib/api';
+import { PASSWORD_MIN } from '@/lib/validators';
 import { useState } from 'react';
 
 interface SettingsSectionProps {
@@ -52,8 +53,8 @@ export default function SettingsSection({
     setPasswordSuccess('');
 
     // Validation
-    if (passwordData.newPassword.length < 6) {
-      setPasswordError('New password must be at least 6 characters long');
+    if (passwordData.newPassword.length < PASSWORD_MIN) {
+      setPasswordError(`New password must be at least ${PASSWORD_MIN} characters long`);
       return;
     }
 

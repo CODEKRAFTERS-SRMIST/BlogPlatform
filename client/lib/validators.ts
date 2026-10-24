@@ -11,6 +11,16 @@ export const ALLOWED_EMAIL_DOMAIN = "gmail.com";
 export const REG_NO_PREFIX = "RA";
 
 /** The only departments a member may pick. */
+/**
+ * The shortest password the server accepts, mirrored here so the browser
+ * refuses the same ones it does.
+ *
+ * Three places used to disagree: the server wanted eight, the settings page
+ * accepted six, and an unused validation module in the server said six too.
+ * Six got you through the form and refused at the API.
+ */
+export const PASSWORD_MIN = 8;
+
 export const DOMAIN_OPTIONS = [
   "Development",
   "Web3",

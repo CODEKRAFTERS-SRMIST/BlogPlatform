@@ -568,9 +568,13 @@ export default function AdminDashboard() {
                             {u.status === "pending" && (
                               <button
                                 onClick={() => handleApproveUser(u.id)}
-                                className="text-amber-600 font-black text-[10px] md:text-xs hover:underline uppercase tracking-widest whitespace-nowrap"
+                                /* The pending-approvals list above already
+                                   guards this; the table did not, so a second
+                                   tap sent a second approval. */
+                                disabled={actionLoading === u.id}
+                                className="text-amber-600 font-black text-[10px] md:text-xs hover:underline uppercase tracking-widest whitespace-nowrap disabled:opacity-50"
                               >
-                                Approve
+                                {actionLoading === u.id ? "..." : "Approve"}
                               </button>
                             )}
                             {isSuperAdmin && u.status === "approved" && u.role === "member" && (

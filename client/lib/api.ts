@@ -335,32 +335,18 @@ export const interactionApi = {
   },
 };
 
-export const searchApi = {
-  searchPosts: async (query: string): Promise<Post[]> => {
-    const response = await apiClient.get("/search", {
-      params: { q: query },
-    });
-    return response.data?.results || response.data;
-  },
-};
-
-export const healthApi = {
-  check: async (): Promise<{ status: string; timestamp: string }> => {
-    const response = await apiClient.get("/health");
-    return response.data;
-  },
-};
-
-export const devApi = {
-  getAllUsers: async (): Promise<any[]> => {
-    const response = await apiClient.get("/dev/users");
-    return response.data?.data || [];
-  },
-  updateUserStatus: async (id: string, status: string): Promise<any> => {
-    const response = await apiClient.patch(`/dev/users/${id}/status`, { status });
-    return response.data?.data;
-  },
-};
+/*
+ * Three helpers lived here that could not work:
+ *
+ *   searchApi  called /search, a route the server has never had.
+ *   healthApi  called /api/health, while the health check sits at /health and
+ *              is not proxied, so it answered 404.
+ *   devApi     called the development-only routes, which answer 404 in
+ *              production - and were reachable from a panel any visitor
+ *              could open inside the sign-in dialog.
+ *
+ * Nothing calls them now, and the routes behind devApi are gone.
+ */
 
 export const adminApi = {
   getStats: async (): Promise<{

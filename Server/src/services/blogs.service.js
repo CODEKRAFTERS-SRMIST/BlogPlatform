@@ -81,6 +81,15 @@ export async function editDraft(authorId, id, payload) {
   if (blog.author_id !== authorId) throw new AppError("Not authorized", 403, "FORBIDDEN");
   if (blog.status === "published") throw new AppError("Cannot edit published blogs", 400, "BAD_REQUEST");
   if (blog.status === "pending_review") throw new AppError("Cannot edit blog while under review", 400, "BAD_REQUEST");
+  /*
+   * A rejected story stays rejected.
+   *
+   * Editing one used to quietly turn it back into a draft, which could then
+   * be submitted again - so a rejection could be undone by anybody calling
+   * this endpoint, whatever the interface offered. The decision belongs to
+   * the admin who made it; writing a new story is the way forward.
+   */
+  if (blog.status === "rejected") throw new AppError("A rejected story cannot be edited. Please write a new one.", 400, "BLOG_REJECTED");
 
   const { title, subtitle, content } = validateBlogPayload(payload);
 
@@ -91,8 +100,7 @@ export async function editDraft(authorId, id, payload) {
       subtitle,
       content,
       image: payload.image || blog.image,
-      links: payload.links || null,
-      status: blog.status === "rejected" ? "draft" : blog.status
+      links: payload.links || null
     }
   });
   return updated;

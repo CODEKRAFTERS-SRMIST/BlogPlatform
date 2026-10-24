@@ -235,6 +235,7 @@ export function MyBlogsSection({
                     onLike={handleLike}
                     onClick={() => handlePostClick(post)}
                     showDelete
+                    showActions={false}
                     onDelete={() => handleDeletePost(post.id)}
                   />
                 </motion.div>

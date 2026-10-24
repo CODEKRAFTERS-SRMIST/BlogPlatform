@@ -483,6 +483,13 @@ export default function BlogPlatform() {
             setSelectedPost={setSelectedPost}
             onLike={() => handleLike(selectedPost.id)}
             isLiked={likedPosts.has(selectedPost.id)}
+            /* My Library is the author reading their own work, drafts and
+               rejected stories included. Liking, sharing and discussing all
+               belong to the public feed, where the story has a page and an
+               audience. */
+            showLike={activeSection !== "myblogs"}
+            showShare={activeSection !== "myblogs"}
+            showComments={activeSection !== "myblogs"}
           />
         )}
       </AnimatePresence>
