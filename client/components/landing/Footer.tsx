@@ -90,7 +90,7 @@ export default function Footer() {
             Be a part of
           </h3>
           <a
-            href="https://www.codekrafters.tech/"
+            href="https://codekraftersrmp.in"
             target="_blank"
             rel="noopener noreferrer"
             className="

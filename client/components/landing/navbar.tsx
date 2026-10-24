@@ -11,7 +11,7 @@ import { useAuth, homeFor } from "@/lib/useAuth"
 const TABS = [
   { name: "HOME", href: "/", icon: Home },
   { name: "BLOGS", href: "/blogs", icon: Globe },
-  { name: "OUR CLUB", href: "https://www.codekrafters.tech/", icon: ExternalLink, external: true },
+  { name: "OUR CLUB", href: "https://codekraftersrmp.in", icon: ExternalLink, external: true },
 ]
 
 export function Navbar() {
