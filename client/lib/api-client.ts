@@ -106,13 +106,49 @@ async function announceAccountBlocked(status: 'rejected' | 'pending') {
     // As in announceSignedOut: fall through to the redirect.
   }
 
-  if (window.location.pathname.startsWith('/pending')) {
+  /*
+   * Drop the dead cookie.
+   *
+   * The account is finished, but its auth_token is still in the browser and
+   * still being sent, so every page load asks /auth/me, is refused for the
+   * same reason, and announces it again. Clearing it ends that, and means
+   * the next person to use this browser starts from nothing.
+   *
+   * Through plain fetch, not this client: a logout that went through the
+   * interceptor below would be one more 401 to announce.
+   */
+  try {
+    await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+  } catch {
+    // Offline, or the server is down. The redirect below still stands.
+  }
+
+  /*
+   * Stand down on the sign-in pages.
+   *
+   * This only checked /pending, so a rejected account's leftover cookie
+   * seized the login form: opening /login fired a background /auth/me, which
+   * was refused, which replaced the page with "account rejected" before the
+   * form could render. Nobody could sign in on that browser again - not the
+   * rejected member on another account, and not anybody else sharing the
+   * machine. Worse, the one page that would have fixed it was the one being
+   * taken away.
+   *
+   * Somebody sitting on the login form is trying to sign in as someone else.
+   * The answer to that is the form, not a page about an account they are
+   * done with.
+   */
+  const onAuthPage = AUTH_PAGES.some((p) => window.location.pathname.startsWith(p));
+  if (onAuthPage) {
     signedOutAlready = false;
     return;
   }
 
   window.setTimeout(() => {
-    if (!window.location.pathname.startsWith('/pending')) {
+    if (!AUTH_PAGES.some((p) => window.location.pathname.startsWith(p))) {
       window.location.replace(`/pending?status=${status}`);
     }
     signedOutAlready = false;
