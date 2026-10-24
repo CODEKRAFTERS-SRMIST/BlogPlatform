@@ -176,18 +176,29 @@ function LoginForm() {
                 Your role has been updated. Please log in again to continue.
               </motion.div>
             )}
+            {/*
+              * One banner, and the colour follows the text that is in it.
+              *
+              * The text was `error || successMessage` while the colour was
+              * chosen by `successMessage` alone, and the two disagree in the
+              * one case that matters: arriving from registration with the
+              * green "wait for approval" notice still set, then failing to
+              * log in. The failure was shown in the success colours, with a
+              * calm green dot pulsing beside it - a refusal dressed as a
+              * confirmation.
+              */}
             {(error || successMessage) && (
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 className={`p-5 rounded-2xl text-sm font-bold mb-8 flex items-center gap-3 border ${
-                  successMessage 
-                  ? 'bg-green-500/10 border-green-500/20 text-green-600' 
-                  : 'bg-red-500/10 border-red-500/20 text-red-600'
+                  error
+                  ? 'bg-red-500/10 border-red-500/20 text-red-600'
+                  : 'bg-green-500/10 border-green-500/20 text-green-600'
                 }`}
               >
-                <div className={`w-2 h-2 rounded-full animate-pulse ${successMessage ? 'bg-green-500' : 'bg-red-500'}`} />
+                <div className={`w-2 h-2 rounded-full animate-pulse ${error ? 'bg-red-500' : 'bg-green-500'}`} />
                 {error || successMessage}
               </motion.div>
             )}
