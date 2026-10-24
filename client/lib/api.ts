@@ -101,7 +101,19 @@ export const handleApiError = (error: unknown): string => {
     if (error.response?.status === 409) return "An account or resource with these details already exists.";
     if (error.response?.status === 413) return "File size is too large. Please upload an image under 5MB.";
     if (error.response?.status === 429) return "Too many requests. Please wait a moment and try again.";
-    if (error.response?.status === 500) return "Something went wrong on the server. This one is not your fault - please try again in a moment.";
+    /*
+     * The server stamps every error with a requestId and logs it under the
+     * same one. For "already registered" that is noise - the member knows
+     * what to do. For a server fault there is nothing they can do, and the
+     * only useful thing they can carry to an admin is the reference that
+     * finds the failure in the Render logs. So it rides along on those, and
+     * nowhere else.
+     */
+    const ref = typeof respData?.error?.requestId === "string"
+      ? ` (ref ${respData.error.requestId.slice(0, 8)})`
+      : "";
+
+    if (error.response?.status === 500) return `Something went wrong on the server. This one is not your fault - please try again in a moment, and tell an admin if it keeps happening${ref}.`;
     if (error.response?.status === 503) return "The server is starting up. Give it up to a minute and try again.";
 
     /*
@@ -129,7 +141,7 @@ export const handleApiError = (error: unknown): string => {
 
     // Nothing above matched: say the status rather than pretend to know more.
     if (error.response.status) {
-      return `The server refused that request (error ${error.response.status}). Please try again, and tell an admin if it keeps happening.`;
+      return `The server refused that request (error ${error.response.status})${ref}. Please try again, and tell an admin if it keeps happening.`;
     }
   }
   if (error instanceof Error) return error.message;
