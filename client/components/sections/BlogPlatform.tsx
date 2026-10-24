@@ -44,11 +44,21 @@ export default function BlogPlatform() {
     }
   }, [searchParams]);
 
-  // Strict Auth Gate: Push to login if not logged in, or pending if not approved
+  /*
+   * Strict auth gate: signed out goes to the login form, and an account that
+   * is not approved goes to the page that says so.
+   *
+   * "rejected" is new here. The gate knew about "pending" and nothing else,
+   * so a rejected account was waved through to a dashboard where every
+   * request then failed - which is exactly what the server-side gates now
+   * return, so the browser has to have an answer for it.
+   */
   useEffect(() => {
     if (!authLoading) {
       if (!isLoggedIn) {
         router.push("/login");
+      } else if (user?.status === "rejected") {
+        router.push("/pending?status=rejected");
       } else if (user?.status === "pending") {
         router.push("/pending");
       }

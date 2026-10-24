@@ -1,11 +1,25 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Clock, ArrowLeft, Globe, ShieldAlert } from "lucide-react";
+import { Clock, ArrowLeft, Globe, ShieldAlert, ShieldX } from "lucide-react";
 import { GridPattern } from "@/components/background";
 
-export default function PendingPage() {
+/**
+ * Two states, one page.
+ *
+ * Waiting for approval and having been turned down are different things, and
+ * were being told the same story: this page said "an admin needs to approve
+ * your account" to everybody who reached it. For somebody whose registration
+ * was refused that is not merely wrong, it is advice to keep waiting for
+ * something that is not coming. The server now names which it is, and the
+ * api client sends people here with it.
+ */
+function PendingContent() {
+  const rejected = useSearchParams().get("status") === "rejected";
+
   return (
     <div className="min-h-screen bg-[#f8f7f4] font-sans text-gray-900 overflow-hidden relative flex items-center justify-center p-4">
       <GridPattern />
@@ -28,17 +42,29 @@ export default function PendingPage() {
               transition={{ delay: 0.2, type: "spring" }}
               className="w-24 h-24 bg-[#111827] rounded-3xl flex items-center justify-center shadow-2xl mb-8 group"
             >
-              <Clock size={48} className="text-[#f5b800] group-hover:rotate-12 transition-transform duration-500" />
+              {rejected ? (
+                <ShieldX size={48} className="text-red-400" />
+              ) : (
+                <Clock size={48} className="text-[#f5b800] group-hover:rotate-12 transition-transform duration-500" />
+              )}
             </motion.div>
 
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-50 border border-amber-100 mb-6"
+              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-6 border ${
+                rejected ? "bg-red-50 border-red-100" : "bg-amber-50 border-amber-100"
+              }`}
             >
-              <ShieldAlert size={14} className="text-amber-600" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">Account Restricted</span>
+              <ShieldAlert size={14} className={rejected ? "text-red-600" : "text-amber-600"} />
+              <span
+                className={`text-[10px] font-black uppercase tracking-[0.2em] ${
+                  rejected ? "text-red-700" : "text-amber-700"
+                }`}
+              >
+                {rejected ? "Account Rejected" : "Account Restricted"}
+              </span>
             </motion.div>
 
             <motion.h1 
@@ -47,7 +73,9 @@ export default function PendingPage() {
               transition={{ delay: 0.4 }}
               className="text-4xl md:text-5xl font-black text-gray-900 mb-6 leading-tight tracking-tight px-4"
             >
-              ADMIN NEED TO APPROVE YOUR ACCOUNT TO JOIN THIS!
+              {rejected
+                ? "YOUR REGISTRATION WAS NOT APPROVED."
+                : "ADMIN NEED TO APPROVE YOUR ACCOUNT TO JOIN THIS!"}
             </motion.h1>
 
             <motion.p 
@@ -56,7 +84,9 @@ export default function PendingPage() {
               transition={{ delay: 0.5 }}
               className="text-lg text-gray-500 font-medium mb-10 max-w-md leading-relaxed"
             >
-              Since this is a club-only platform, an admin must manually verify your registration before you can start sharing stories.
+              {rejected
+                ? "An admin reviewed your registration and did not approve it, so this account cannot be used. If you believe that was a mistake, speak to a club admin - they can approve it from their dashboard."
+                : "Since this is a club-only platform, an admin must manually verify your registration before you can start sharing stories."}
             </motion.p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
@@ -87,6 +117,8 @@ export default function PendingPage() {
               </motion.div>
             </div>
 
+{/* There is no process left to wait out once the answer is no. */}
+            {!rejected && (
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -102,9 +134,27 @@ export default function PendingPage() {
                 ))}
               </div>
             </motion.div>
+            )}
           </div>
         </div>
       </motion.div>
     </div>
   );
 }
+
+/*
+ * useSearchParams has to sit inside a Suspense boundary or the build refuses
+ * to prerender this page - the same shape the login page uses.
+ */
+export default function PendingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[#f8f7f4]" />
+      }
+    >
+      <PendingContent />
+    </Suspense>
+  );
+}
+

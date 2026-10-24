@@ -86,6 +86,39 @@ async function announceSignedOut(reason?: string) {
   }, 400);
 }
 
+/**
+ * The account is no longer usable, as opposed to the session having lapsed.
+ *
+ * A lapsed session is answered by signing in again, so announceSignedOut
+ * sends people to the login form. These two cannot be: signing in again
+ * would be refused for the same reason, and the login form would leave them
+ * staring at an error with no idea what to do. They go to the page that
+ * explains the state they are actually in.
+ */
+async function announceAccountBlocked(status: 'rejected' | 'pending') {
+  if (typeof window === 'undefined' || signedOutAlready) return;
+  signedOutAlready = true;
+
+  try {
+    const { notifySignedOut } = await import('./useAuth');
+    notifySignedOut();
+  } catch {
+    // As in announceSignedOut: fall through to the redirect.
+  }
+
+  if (window.location.pathname.startsWith('/pending')) {
+    signedOutAlready = false;
+    return;
+  }
+
+  window.setTimeout(() => {
+    if (!window.location.pathname.startsWith('/pending')) {
+      window.location.replace(`/pending?status=${status}`);
+    }
+    signedOutAlready = false;
+  }, 400);
+}
+
 /** Called after a successful sign-in so a later 401 can redirect again. */
 export function resetSignedOutLatch() {
   signedOutAlready = false;
@@ -141,9 +174,14 @@ apiClient.interceptors.response.use(
         }
 
         processQueue(refreshError);
+        // The renewal now refuses an account that is not in good standing,
+        // and that is not the same as a session running out.
+        if (code === 'ACCOUNT_REJECTED' || code === 'PENDING_APPROVAL') {
+          void announceAccountBlocked(code === 'ACCOUNT_REJECTED' ? 'rejected' : 'pending');
+        }
         // A /auth/me that cannot be refreshed means "nobody is signed in",
         // which is a normal answer on a public page - the caller handles it.
-        if (!url.includes('/auth/me')) {
+        else if (!url.includes('/auth/me')) {
           void announceSignedOut(code === 'SESSION_REVOKED' ? 'role_changed' : undefined);
         } else {
           const { notifySignedOut } = await import('./useAuth');
@@ -153,6 +191,21 @@ apiClient.interceptors.response.use(
       } finally {
         isRefreshing = false;
       }
+    }
+
+    /*
+     * A 403 about the account rather than about the page.
+     *
+     * Nothing used to look at 403 at all - only 401 was handled - so a
+     * refusal of this kind surfaced as a generic error toast over a
+     * half-loaded dashboard, with every other request on the page failing
+     * beside it. The server names the reason in error.code; anything else
+     * (a genuine "you are not an admin") is still left to the caller.
+     */
+    if (error.response?.status === 403) {
+      const code = (error.response.data as any)?.error?.code;
+      if (code === 'ACCOUNT_REJECTED') void announceAccountBlocked('rejected');
+      else if (code === 'PENDING_APPROVAL') void announceAccountBlocked('pending');
     }
 
     return Promise.reject(error);

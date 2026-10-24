@@ -99,8 +99,11 @@ NODE_ENV=development
 FRONTEND_URL="http://localhost:3000"
 APP_URL="http://localhost:3000"
 
+# Required - the browser authenticates by cookie, so without this you can
+# log in and then be treated as signed out on every page after it.
+USE_COOKIES=true
+
 # Optional
-USE_COOKIES=false
 ADMIN_EMAIL="admin@example.com"
 ```
 

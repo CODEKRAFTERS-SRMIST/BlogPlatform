@@ -2,6 +2,7 @@ import { Router } from "express";
 import upload from "../middleware/upload.js";
 import { uploadFile, isR2Configured, missingR2Vars, canUseLocalFallback } from "../services/r2.service.js";
 import { authenticate } from "../middleware/auth.js";
+import { ensureMember } from "../middleware/role.js";
 import { uploadLimiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
@@ -9,6 +10,9 @@ const router = Router();
 router.post(
   "/upload",
   authenticate,
+  // Files land in the club's R2 bucket and stay there. Worth knowing the
+  // account is still in good standing before paying for the storage.
+  ensureMember,
   uploadLimiter,
   (req, res, next) => {
     upload.single("image")(req, res, (err) => {

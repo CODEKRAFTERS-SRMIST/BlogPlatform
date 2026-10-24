@@ -1,0 +1,44 @@
+# Docker does not read .gitignore.
+#
+# The Dockerfile here is a single stage ending in `COPY . .`, so without this
+# file everything in the folder goes into the image and stays in its layers -
+# including .env, which holds the database password, JWT_SECRET, all five R2
+# keys and the Gmail app password. `docker history` reads those back out of
+# any copy of the image. The scratch scripts went in the same way, and so did
+# a Windows node_modules, straight over the Alpine one `npm ci` had just
+# installed.
+
+# Secrets. Nothing in this family belongs in an image.
+.env
+.env.*
+
+# Installed inside the image by `npm ci`; the host copy is the wrong platform.
+node_modules
+npm-debug.log*
+
+# History, logs, and anything written at runtime.
+.git
+.gitignore
+.githooks
+*.log
+logs
+uploads
+
+# Generated inside the image by `npx prisma generate`.
+src/generated
+
+# Scratch, test and utility scripts. Kept in step with .gitignore - these talk
+# straight to whatever DATABASE_URL points at, so they have no business
+# travelling with the application.
+fix-admin.js
+fix_publish_all.js
+fix_user_auth.js
+scratch_check_users.js
+test-dashboard.js
+test-users.js
+reset-admin-pwd.js
+dump-users.js
+
+# The build instructions themselves.
+Dockerfile
+.dockerignore

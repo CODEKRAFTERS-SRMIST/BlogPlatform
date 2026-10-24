@@ -196,6 +196,35 @@ export async function refreshAccessToken(refreshTokenValue) {
     throw new AppError('Refresh token expired', 401, 'TOKEN_EXPIRED');
   }
 
+  /*
+   * The account's standing, checked on every renewal.
+   *
+   * Refresh tokens roll: spending one issues the next, with a fresh seven-day
+   * life. A session therefore never ages out on its own as long as somebody
+   * keeps using it, so without this an account that stopped being in good
+   * standing would go on renewing itself for ever. The role was already being
+   * re-read here - the token below is signed with stored.user.role, not with
+   * whatever the old one claimed - and status was the half that was missing.
+   *
+   * The whole chain is revoked rather than just this one, so there is no
+   * second token left to try.
+   */
+  if (stored.user.status !== 'approved') {
+    await prisma.refreshToken.updateMany({
+      where: { user_id: stored.user.id, revoked: false },
+      data: { revoked: true },
+    });
+
+    const rejected = stored.user.status === 'rejected';
+    throw new AppError(
+      rejected
+        ? 'This account has been rejected and can no longer be used.'
+        : 'This account is waiting for an admin to approve it.',
+      401,
+      rejected ? 'ACCOUNT_REJECTED' : 'PENDING_APPROVAL',
+    );
+  }
+
   await prisma.refreshToken.update({
     where: { id: stored.id },
     data: { revoked: true },

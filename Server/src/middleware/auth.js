@@ -106,6 +106,30 @@ async function loadCurrentUser(req) {
   return freshUser;
 }
 
+/**
+ * Refuses a request because of the account's standing, not its role.
+ *
+ * "You are not an admin" and "this account is no longer in good standing"
+ * are different facts and need different screens: the first is a page
+ * somebody should not have opened, the second means they should be signed
+ * out and told why. Both used to come back as a bare "Forbidden", which the
+ * browser could only turn into a generic error toast over a half-loaded
+ * page.
+ */
+function denyForStanding(res, status) {
+  const rejected = status === 'rejected';
+  return res.status(403).json({
+    success: false,
+    error: {
+      code: rejected ? 'ACCOUNT_REJECTED' : 'PENDING_APPROVAL',
+      status,
+      message: rejected
+        ? 'This account has been rejected and can no longer be used.'
+        : 'This account is waiting for an admin to approve it.',
+    },
+  });
+}
+
 export function requireRole(allowedRoles) {
   // Convert single role to array
   const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
@@ -117,8 +141,11 @@ export function requireRole(allowedRoles) {
 
     const forbidden = () =>
       res.status(403).json({
-        error: "Forbidden",
-        message: `This action requires one of the following roles: ${roles.join(', ')}`,
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: `This action requires one of the following roles: ${roles.join(', ')}`,
+        },
       });
 
     let freshUser;
@@ -134,7 +161,8 @@ export function requireRole(allowedRoles) {
       });
     }
 
-    if (!freshUser || freshUser.status !== 'approved') return forbidden();
+    if (!freshUser) return forbidden();
+    if (freshUser.status !== 'approved') return denyForStanding(res, freshUser.status);
     if (roles.includes(freshUser.role) || freshUser.is_super_admin) return next();
 
     return forbidden();
@@ -161,12 +189,19 @@ export async function requireSuperAdmin(req, res, next) {
     });
   }
 
-  if (freshUser && freshUser.status === 'approved' && freshUser.is_super_admin) {
+  if (freshUser && freshUser.status !== 'approved') {
+    return denyForStanding(res, freshUser.status);
+  }
+
+  if (freshUser && freshUser.is_super_admin) {
     return next();
   }
 
   return res.status(403).json({
-    error: "Forbidden",
-    message: "This action is restricted to Super Administrators only.",
+    success: false,
+    error: {
+      code: 'FORBIDDEN',
+      message: "This action is restricted to Super Administrators only.",
+    },
   });
 }
