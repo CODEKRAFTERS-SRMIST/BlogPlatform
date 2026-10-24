@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ImageIcon, Upload, Save, Calendar, Tag, User } from 'lucide-react';
-import { NewPost } from '@/lib/types';
+import { ImageIcon, Upload, Save, Loader2 } from 'lucide-react';
+import { NewPost } from '@/types/blog';
 import { BLOG_LIMITS, counterFor, truncateChars, PREVIEW_CHARS } from '@/lib/blogLimits';
+import { useAuth } from '@/lib/useAuth';
+import { formatPostDate } from '@/lib/mapPost';
 
 
 function FieldCounter({ field, value }: { field: 'title' | 'subtitle' | 'content'; value: string }) {
@@ -26,6 +28,8 @@ interface CreateBlogSectionProps {
   handleImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleCreatePost: () => void;
   fileInputRef: React.RefObject<HTMLInputElement>;
+  /** True while the story is being sent, so the button cannot fire twice. */
+  submitting?: boolean;
 }
 
 export default function CreateBlogSection({ 
@@ -33,9 +37,22 @@ export default function CreateBlogSection({
   setNewPost, 
   handleImageUpload,
   handleCreatePost,
-  fileInputRef 
+  fileInputRef,
+  submitting = false,
 }: CreateBlogSectionProps) {
+  const { user } = useAuth();
   const [isDragging, setIsDragging] = useState(false);
+
+  /*
+   * The author and the date are shown, not asked for.
+   *
+   * Both used to be text boxes. Neither was ever sent: the server takes the
+   * author from the session and the date from the clock when the row is
+   * written. So whatever was typed was discarded - and the author box in
+   * particular read as an invitation to publish under somebody else's name.
+   */
+  const authorName = user?.name || 'You';
+  const today = formatPostDate(new Date().toISOString());
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -184,53 +201,16 @@ export default function CreateBlogSection({
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Author</label>
-            <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="text"
-                value={newPost.author}
-                onChange={(e) => setNewPost({ ...newPost, author: e.target.value })}
-                className="w-full bg-gray-50 border-2 border-gray-200 rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#f5b800] focus:bg-white transition-all"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Date</label>
-            <div className="relative">
-              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="date"
-                value={newPost.date}
-                onChange={(e) => setNewPost({ ...newPost, date: e.target.value })}
-                className="w-full bg-gray-50 border-2 border-gray-200 rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#f5b800] focus:bg-white transition-all"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Tags</label>
-          <div className="relative">
-            <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input
-              type="text"
-              value={newPost.tags}
-              onChange={(e) => setNewPost({ ...newPost, tags: e.target.value })}
-              placeholder="Design, Tech, Lifestyle (comma separated)"
-              className="w-full bg-gray-50 border-2 border-gray-200 rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#f5b800] focus:bg-white transition-all"
-            />
-          </div>
-        </div>
+        <p className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs font-semibold text-gray-500">
+          Publishing as <span className="font-black text-gray-900">{authorName}</span> · {today}
+        </p>
 
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={handleCreatePost}
           disabled={
+            submitting ||
             !counterFor('title', newPost.title).ok ||
             newPost.title.trim().length === 0 ||
             !counterFor('subtitle', newPost.subtitle).ok ||
@@ -239,7 +219,15 @@ export default function CreateBlogSection({
           }
           className="w-full bg-[#f5b800] hover:bg-[#e5a800] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-black py-4 rounded-2xl shadow-lg transition-colors flex items-center justify-center gap-3 text-lg"
         >
-          <Save size={20} /> Publish Story
+          {submitting ? (
+            <>
+              <Loader2 size={20} className="animate-spin" /> Submitting…
+            </>
+          ) : (
+            <>
+              <Save size={20} /> Submit for review
+            </>
+          )}
         </motion.button>
       </motion.div>
 
@@ -260,10 +248,9 @@ export default function CreateBlogSection({
                 alt="Cover preview" 
                 className="w-full h-full object-cover"
                 loading="lazy"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.src = "https://images.unsplash.com/photo-1499750789039-ca2a2f92c815?w=800&h=400&fit=crop";
-                }}
+                /* No stock-photo stand-in. A cover that will not load is
+                   something to notice, not to paper over with a photograph
+                   of somebody else's desk. */
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400">
@@ -271,19 +258,6 @@ export default function CreateBlogSection({
               </div>
             )}
           </div>
-
-          {newPost.tags && (
-            <div className="flex flex-wrap gap-2">
-              {newPost.tags.split(',').map((tag, i) => (
-                <span 
-                  key={i}
-                  className="px-3 py-1 bg-[#f5b800] text-white rounded-full text-xs font-bold uppercase tracking-wider"
-                >
-                  {tag.trim()}
-                </span>
-              ))}
-            </div>
-          )}
 
           <h2 className="wrap-anywhere text-xl sm:text-2xl md:text-3xl font-black text-gray-900 leading-tight">
             {newPost.title || 'Your title here...'}
@@ -296,11 +270,11 @@ export default function CreateBlogSection({
           <div className="pt-4 border-t border-gray-200">
             <div className="flex min-w-0 items-center gap-3">
               <div className="w-10 h-10 shrink-0 rounded-full bg-gradient-to-br from-[#f5b800] to-amber-500 flex items-center justify-center text-white font-bold">
-                {newPost.author.charAt(0) || 'A'}
+                {authorName.charAt(0)}
               </div>
               <div className="min-w-0">
-                <div className="truncate font-bold text-gray-900">{newPost.author || 'Author'}</div>
-                <div className="text-sm text-gray-500">{newPost.date}</div>
+                <div className="truncate font-bold text-gray-900">{authorName}</div>
+                <div className="text-sm text-gray-500">{today}</div>
               </div>
             </div>
           </div>

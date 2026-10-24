@@ -45,7 +45,16 @@ function validateBlogPayload(payload) {
   return { title, subtitle: subtitle || null, content };
 }
 
-export async function createDraft(authorId, payload) {
+/**
+ * Creates a story, and optionally puts it straight into review.
+ *
+ * The editor used to create a draft and then call submitForReview as a
+ * separate request. When the second one failed the browser logged it to the
+ * console, told the writer their story was submitted, and showed a pending
+ * badge - over a row that was still a draft no admin would ever see. One
+ * write, one status, nothing in between to fall into.
+ */
+export async function createDraft(authorId, payload, { submit = false } = {}) {
   const { title, subtitle, content } = validateBlogPayload(payload);
 
   const blog = await prisma.blog.create({
@@ -56,7 +65,7 @@ export async function createDraft(authorId, payload) {
       image: payload.image || null,
       links: payload.links || null,
       author_id: authorId,
-      status: "draft"
+      status: submit ? "pending_review" : "draft"
     },
     include: {
       author: { select: { id: true, name: true, email: true } },

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-  TrendingUp,
+  MessageCircle,
   FileText,
   Heart,
   PenLine,
@@ -18,14 +18,14 @@ import { useAuth } from "@/lib/useAuth";
 
 interface DashboardSectionProps {
   totalLikes: number;
-  totalViews: number;
+  totalComments: number;
   myPosts: Post[];
   setActiveSection: (section: Section) => void;
 }
 
 export default function DashboardSection({
   totalLikes,
-  totalViews,
+  totalComments,
   myPosts,
   setActiveSection,
 }: DashboardSectionProps) {
@@ -248,13 +248,13 @@ export default function DashboardSection({
                 className="bg-white p-6 md:p-8 rounded-[2rem] md:rounded-[2.5rem] shadow-xl border border-gray-100 flex flex-col items-center text-center group hover:border-[#f5b800]/30 transition-colors"
               >
                 <div className="w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-[#f5b800] to-amber-500 rounded-2xl flex items-center justify-center text-white shadow-lg mb-4 group-hover:scale-110 transition-transform duration-300">
-                  <TrendingUp size={28} className="md:w-8 md:h-8" />
+                  <MessageCircle size={28} className="md:w-8 md:h-8" />
                 </div>
                 <div className="text-[10px] md:text-[11px] font-black uppercase tracking-[0.2em] md:tracking-[0.25em] text-gray-400 mb-2">
-                  Total Views
+                  Total Comments
                 </div>
                 <div className="text-4xl md:text-5xl font-black text-gray-900 tracking-tight flex justify-center">
-                  <SlotCounter value={totalViews} />
+                  <SlotCounter value={totalComments} />
                 </div>
               </motion.div>
 

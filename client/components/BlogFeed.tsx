@@ -7,6 +7,7 @@ import { Post } from '@/types/blog';
 import PostCard from './PostCard';
 import BlogDetailModal from './BlogDetailModal';
 import { blogApi, interactionApi, handleApiError, Pagination } from '@/lib/api';
+import { mapPost } from '@/lib/mapPost';
 import { toast } from 'react-hot-toast';
 
 const containerVariants: Variants = {
@@ -32,21 +33,6 @@ export default function BlogFeed() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [pagination, setPagination] = useState<Pagination | null>(null);
-
-  const mapPost = (p: any): Post => ({
-    id: p.id,
-    title: p.title,
-    subtitle: p.subtitle || p.excerpt || '',
-    content: p.content || '',
-    coverImage: p.image || p.coverImage || 'https://images.unsplash.com/photo-1499750789039-ca2a2f92c815?w=800&h=400&fit=crop',
-    author: p.author?.name || 'Unknown',
-    date: p.publishedAt ? new Date(p.publishedAt).toLocaleDateString() : new Date().toLocaleDateString(),
-    tags: p.tags?.map((t: any) => t.tag?.name || t.name) || [],
-    status: p.status || 'published',
-    likes: p._count?.likes || 0,
-    comments: p._count?.comments || 0,
-    views: p.viewCount || 0,
-  });
 
   /** Loads one page. `append` keeps what is already on screen. */
   const loadPage = useCallback(async (page: number, append: boolean) => {
@@ -107,10 +93,15 @@ export default function BlogFeed() {
     }
   };
 
-  const filteredPosts = posts.filter(p => 
-    p.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    p.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  // Title and subtitle. The tag arm this replaces could never match:
+  // tags were never stored, so every post carried an empty list.
+  const filteredPosts = posts.filter((p) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      p.title.toLowerCase().includes(q) || p.subtitle.toLowerCase().includes(q)
+    );
+  });
 
   if (loading) {
     return (

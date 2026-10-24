@@ -2,7 +2,7 @@
 
 import { useState, forwardRef } from 'react';
 import { motion } from 'framer-motion';
-import { Heart, Trash2, Share2 } from 'lucide-react';
+import { Heart, Trash2, Share2, ImageIcon } from 'lucide-react';
 import { Post } from '@/types/blog';
 import ShareModal from '@/components/ShareModal';
 
@@ -18,6 +18,9 @@ interface PostCardProps {
 const PostCard = forwardRef<HTMLDivElement, PostCardProps>(
   ({ post, onClick, onDelete, onLike, isLiked, showDelete = false }, ref) => {
     const [showShareModal, setShowShareModal] = useState(false);
+    const [coverFailed, setCoverFailed] = useState(false);
+    const cover = post.image || post.coverImage;
+    const hasCover = Boolean(cover) && !coverFailed;
     return (
       <motion.div
         ref={ref}
@@ -43,16 +46,21 @@ const PostCard = forwardRef<HTMLDivElement, PostCardProps>(
           layoutId={`card-image-${post.id}`}
           className="w-full aspect-[16/9] rounded-2xl sm:rounded-[1.5rem] overflow-hidden shadow-md relative z-10 bg-gray-100"
         >
-          <motion.img 
-            src={post.image || post.coverImage} 
-            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
-            alt={post.title}
-            loading="lazy"
-            onError={(e) => { 
-              const target = e.target as HTMLImageElement;
-              target.src = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&h=500&fit=crop"; 
-            }}
-          />
+          {/* A story with no cover gets the empty frame, not the same
+               Unsplash photograph as every other story without one. */}
+          {hasCover ? (
+            <motion.img
+              src={cover}
+              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+              alt={post.title}
+              loading="lazy"
+              onError={() => setCoverFailed(true)}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-gray-300">
+              <ImageIcon size={28} />
+            </div>
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
         </motion.div>
         
@@ -84,17 +92,6 @@ const PostCard = forwardRef<HTMLDivElement, PostCardProps>(
             </div>
           )}
           
-          <div className="flex flex-wrap gap-2">
-            {post.tags.slice(0, 3).map((tag, i) => (
-              <span 
-                key={i}
-                className="px-2 py-1 bg-gray-100 group-hover:bg-[#f5b800] group-hover:text-white transition-colors duration-300 rounded-full text-[10px] font-bold uppercase tracking-wider text-gray-500"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-
           <motion.h3 
             layoutId={`card-title-${post.id}`}
             className="text-lg sm:text-xl md:text-2xl font-black text-gray-900 leading-tight group-hover:text-[#f5b800] transition-colors duration-300 line-clamp-2 wrap-anywhere"

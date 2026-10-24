@@ -312,21 +312,11 @@ function StoryDeck({
   )
 }
 
-/*
- * A tag arrives either as a plain string or as the join row Prisma returns,
- * `{ tag: { name } }` - the feed in BlogPlatform.tsx unpacks the same two
- * shapes. Reading it blindly is how a card ends up labelled [object Object].
- */
-function firstTagName(tags: Post["tags"]): string {
-  const first: any = Array.isArray(tags) ? tags[0] : undefined
-  if (!first) return "Story"
-  if (typeof first === "string") return first
-  return first.tag?.name || first.name || "Story"
-}
-
 function StoryCardBody({ post, onOpen }: { post: Post; onOpen: () => void }) {
-  const cover = post.image || post.coverImage || FALLBACK_COVER
-  const tag = firstTagName(post.tags)
+  const cover = post.image || FALLBACK_COVER
+  // Always "Story" in practice: this read the first tag, and tags were never
+  // stored, so every post fell through to the same fallback.
+  const tag = "Story"
 
   return (
     <>

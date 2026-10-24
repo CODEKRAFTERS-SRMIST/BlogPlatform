@@ -5,7 +5,10 @@ export async function createDraft(req, res, next) {
   try {
     const authorId = req.user.id;
     const payload = req.body;
-    const blog = await blogsService.createDraft(authorId, payload);
+    // Explicitly true, not merely truthy: this decides whether a story goes
+    // in front of an admin, so a stray string should not stand in for a yes.
+    const submit = payload.submit === true;
+    const blog = await blogsService.createDraft(authorId, payload, { submit });
     res.status(201).json({
       success: true,
       data: blog

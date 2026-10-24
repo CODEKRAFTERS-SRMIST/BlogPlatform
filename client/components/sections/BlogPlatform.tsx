@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AnimatePresence, LayoutGroup } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { toast } from "react-hot-toast";
 import { Section, Post, NewPost } from "@/types/blog";
 import Sidebar from "../sidebar";
@@ -18,7 +18,7 @@ const AuthModal = dynamic(() => import("../AuthModal").then(mod => ({ default: m
 import { useApi, useMutation } from "@/lib/hooks";
 import { blogApi, interactionApi, uploadImage, handleApiError, Pagination } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
-import { useAutoLogin } from "@/lib/useAutoLogin";
+import { mapPost } from "@/lib/mapPost";
 
 export default function BlogPlatform() {
   const [activeSection, setActiveSection] = useState<Section>("dashboard");
@@ -54,9 +54,6 @@ export default function BlogPlatform() {
       }
     }
   }, [authLoading, isLoggedIn, user, router]);
-
-  // Auto-login user on first load
-  useAutoLogin();
 
   // Fetch all posts from backend
   const {
@@ -97,15 +94,8 @@ export default function BlogPlatform() {
     mutate: createPostMutation,
     loading: createLoading,
     error: createError,
-  } = useMutation(
-    (data: {
-      title: string;
-      slug: string;
-      content: string;
-      excerpt?: string;
-      coverImage?: string;
-      tagSlugs?: string[];
-    }) => blogApi.createPost(data),
+  } = useMutation((data: Parameters<typeof blogApi.createPost>[0]) =>
+    blogApi.createPost(data),
   );
 
   // Mutation for deleting posts
@@ -134,26 +124,7 @@ export default function BlogPlatform() {
       });
       setLikedPosts(likedIds);
 
-      const mappedPosts = fetchedPosts.posts.map((p: any) => ({
-        id: p.id,
-        title: p.title,
-        subtitle: p.subtitle || p.excerpt || "",
-        content: p.content || "",
-        coverImage:
-          p.image ||
-          p.coverImage ||
-          "https://images.unsplash.com/photo-1499750789039-ca2a2f92c815?w=800&h=400&fit=crop",
-        author: p.author?.name || "Unknown",
-        date: p.publishedAt
-          ? new Date(p.publishedAt).toISOString().split("T")[0]
-          : new Date().toISOString().split("T")[0],
-        tags: p.tags?.map((t: any) => t.tag?.name || t.name) || [],
-        status: p.status || "published",
-        likes: p._count?.likes || 0,
-        comments: p._count?.comments || 0,
-        views: p.viewCount || 0,
-      }));
-      setPosts(mappedPosts);
+      setPosts(fetchedPosts.posts.map(mapPost));
       setPagination(fetchedPosts.pagination);
       setLoading(false);
       setError(null);
@@ -165,77 +136,40 @@ export default function BlogPlatform() {
     if (postsError) {
       setError(postsError);
       setLoading(false);
-      const fallbackPosts: Post[] = [
-        {
-          id: "1",
-          title: "The Art of Minimalist Design",
-          subtitle: "How simplicity can transform your creative work",
-          content:
-            "Minimalism isn't about having less—it's about making room for more of what matters.",
-          coverImage:
-            "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&h=500&fit=crop",
-          author: user ? user.name : "Unknown",
-          date: "2024-01-15",
-          tags: ["Design", "Minimalism", "Creativity"],
-          status: "published",
-          likes: 234,
-          comments: 45,
-          views: 2847,
-        },
-      ];
-      setPosts(fallbackPosts);
+      /*
+       * Nothing is invented here any more. A failed request used to drop a
+       * made-up story into the feed - a title, an author, 234 likes, 2,847
+       * views - with nothing to say it was not real. An empty feed under the
+       * error message is the truth.
+       */
+      setPosts([]);
     }
-  }, [fetchedPosts, postsError, postsLoading, user]);
+    // user?.id, not user: the session store hands back a fresh object every
+    // time it re-checks who is signed in, which would re-run all of this.
+  }, [fetchedPosts, postsError, postsLoading, user?.id]);
 
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  /*
+   * Only what actually reaches the server. The author came from a text box
+   * anybody could type into and the date from a picker, and neither was ever
+   * sent: the API takes the author from the session and the date from the
+   * clock. Both boxes are gone, so what you type is what is saved.
+   */
   const [newPost, setNewPost] = useState<NewPost>({
     title: "",
     subtitle: "",
     content: "",
     coverImage: "",
-    author: user ? user.name : "Author",
-    date: new Date().toISOString().split("T")[0],
-    tags: "",
   });
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const mapBackendToPost = (p: any): Post => ({
-    id: p.id,
-    title: p.title,
-    subtitle: p.subtitle || p.excerpt || "",
-    content: p.content || "",
-    coverImage:
-      p.image ||
-      p.coverImage ||
-      "https://images.unsplash.com/photo-1499750789039-ca2a2f92c815?w=800&h=400&fit=crop",
-    author: (p.author && (p.author.name || p.author.username)) || "User",
-    userLiked: !!p.userLiked,
-    date: p.publishedAt
-      ? new Date(p.publishedAt).toISOString().split("T")[0]
-      : p.created_at
-        ? new Date(p.created_at).toISOString().split("T")[0]
-        : new Date().toISOString().split("T")[0],
-    tags:
-      p.tags && Array.isArray(p.tags)
-        ? p.tags.map((t: any) => t.tag?.name || t.name)
-        : [],
-    status: p.status || "published",
-    // Only /blogs/my returns this, and only for the author's own rejected
-    // stories - the public feed never carries it. Without it the author saw
-    // a bare "rejected" badge and had no way to learn what to change.
-    rejectionReason: p.rejection_reason || p.rejectionReason || undefined,
-    likes: p._count?.likes || 0,
-    comments: p._count?.comments || 0,
-    views: p.viewCount || 0,
-  });
 
   const myPosts: Post[] = Array.isArray(myPostsData)
-    ? myPostsData.map(mapBackendToPost)
+    ? myPostsData.map(mapPost)
     : [];
   const totalLikes = myPosts.reduce((acc, post) => acc + post.likes, 0);
   const totalComments = myPosts.reduce((acc, post) => acc + post.comments, 0);
-  const totalViews = myPosts.reduce((acc, post) => acc + post.views, 0);
 
   /** Appends the next page of blogs to the feed. */
   const handleLoadMore = async () => {
@@ -252,25 +186,7 @@ export default function BlogPlatform() {
         });
         return next;
       });
-      const mapped = fetched.map((p: any) => ({
-        id: p.id,
-        title: p.title,
-        subtitle: p.subtitle || p.excerpt || "",
-        content: p.content || "",
-        coverImage:
-          p.image ||
-          p.coverImage ||
-          "https://images.unsplash.com/photo-1499750789039-ca2a2f92c815?w=800&h=400&fit=crop",
-        author: p.author?.name || "Unknown",
-        date: p.publishedAt
-          ? new Date(p.publishedAt).toISOString().split("T")[0]
-          : new Date().toISOString().split("T")[0],
-        tags: p.tags?.map((t: any) => t.tag?.name || t.name) || [],
-        status: p.status || "published",
-        likes: p._count?.likes || 0,
-        comments: p._count?.comments || 0,
-        views: p.viewCount || 0,
-      })) as Post[];
+      const mapped = fetched.map(mapPost);
       setPosts((prev) => {
         const seen = new Set(prev.map((x) => x.id));
         return [...prev, ...mapped.filter((x) => !seen.has(x.id))];
@@ -305,98 +221,69 @@ export default function BlogPlatform() {
     }
   };
 
+  /*
+   * One request, and the truth about what happened to it.
+   *
+   * This used to create the story and then submit it for review as a second
+   * request, with the second one's failure caught and logged to the console.
+   * The interface went on to say "submitted for review" and show a pending
+   * badge regardless - while the story sat in the database as a draft no
+   * admin would ever see, and the writer had no way to know.
+   *
+   * The API takes submit: true now and writes it straight to pending_review,
+   * so there is no gap between the two states for anything to fall into. The
+   * status shown is whatever came back, not what we hoped for.
+   */
   const handleCreatePost = async () => {
-    if (!newPost.title || !newPost.content) {
+    // The first tap wins. Without this a second tap on a slow connection
+    // sent a second create and the writer ended up with the story twice.
+    if (createLoading) return;
+
+    /*
+     * No length checks here any more. They disagreed with the server - 20
+     * characters against the server's 100 - so the editor waved a story
+     * through and the server then refused it. CreateBlogSection keeps the
+     * Publish button disabled against the real limits in lib/blogLimits.ts,
+     * which mirror the server's.
+     */
+    if (!newPost.title.trim() || !newPost.content.trim()) {
       setError("Title and content are required");
       return;
     }
 
     try {
       setError(null);
-      const baseSlug = newPost.title
-        .toLowerCase()
-        .trim()
-        .replace(/[^\w\s-]/g, "")
-        .replace(/\s+/g, "-")
-        .replace(/-+/g, "-");
 
-      const timestamp = Date.now().toString().slice(-6);
-      const slug = `${baseSlug}-${timestamp}`;
-
-      if (newPost.title.trim().length < 3) {
-        setError("Title must be at least 3 characters");
-        return;
-      }
-
-      if (slug.length < 3) {
-        setError("Generated slug is too short (min 3 characters)");
-        return;
-      }
-
-      if (newPost.content.trim().length < 20) {
-        setError("Content must be at least 20 characters");
-        return;
-      }
-
-      const newPostData = {
-        title: newPost.title,
-        slug: slug,
+      const created: any = await createPostMutation({
+        title: newPost.title.trim(),
+        subtitle: newPost.subtitle.trim() || undefined,
         content: newPost.content,
-        subtitle: newPost.subtitle,
-        excerpt: newPost.subtitle,
-        coverImage:
-          newPost.coverImage ||
-          "https://images.unsplash.com/photo-1499750789039-ca2a2f92c815?w=800&h=400&fit=crop",
-        tagSlugs: newPost.tags
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean),
-      };
+        // Empty rather than a stock photograph. The placeholder used to be
+        // written into the database as the story's real cover.
+        image: newPost.coverImage || undefined,
+        submit: true,
+      });
 
-      const createdPost = await createPostMutation(newPostData);
-
-      const rawPost = createdPost as any;
-
-      // Submit for review immediately after creation
-      if (rawPost?.id) {
-        try {
-          await blogApi.submitPost(rawPost.id);
-        } catch (submitErr) {
-          console.error(
-            "Failed to submit for review, but blog was created:",
-            submitErr,
-          );
-        }
-      }
-
-      const mapped = {
-        ...mapBackendToPost(rawPost),
-        status: "pending_review" as "pending_review",
-      };
-
-      setPosts([mapped, ...posts]);
+      setPosts((prev) => [mapPost(created), ...prev]);
       try {
         await refetchMyPosts();
-      } catch (e) {
-        // ignore
+      } catch {
+        // The story is saved either way; the library refreshes on next view.
       }
+
       toast.success(
-        "Success! Your story has been submitted for review. It will be live once approved by an admin.",
+        "Your story has been submitted for review. It goes live once an admin approves it.",
       );
-      setNewPost({
-        title: "",
-        subtitle: "",
-        content: "",
-        coverImage: "",
-        author: user ? user.name : "Author",
-        date: new Date().toISOString().split("T")[0],
-        tags: "",
-      });
+      setNewPost({ title: "", subtitle: "", content: "", coverImage: "" });
       setActiveSection("myblogs");
     } catch (err) {
-      setError(handleApiError(err));
+      // Said out loud, not swallowed: if this failed, nothing was submitted.
+      const message = handleApiError(err);
+      setError(message);
+      toast.error(message);
     }
   };
+
 
   const handleDeletePost = async (id: string) => {
     const postToDelete = myPosts.find((p) => p.id === id);
@@ -531,7 +418,7 @@ export default function BlogPlatform() {
           <DashboardSection
             key="dashboard"
             totalLikes={totalLikes}
-            totalViews={totalViews}
+            totalComments={totalComments}
             myPosts={myPosts}
             setActiveSection={setActiveSection}
           />
@@ -571,6 +458,7 @@ export default function BlogPlatform() {
             setNewPost={setNewPost}
             handleImageUpload={handleImageUpload}
             handleCreatePost={handleCreatePost}
+            submitting={createLoading}
             fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
           />
         )}

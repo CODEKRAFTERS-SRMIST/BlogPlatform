@@ -44,7 +44,7 @@ function ReviewCard({
   onOpen: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const cover = blog.image || blog.coverImage;
+  const cover = blog.image;
   const author = blog.author || ({} as Post["author"]);
   const summary =
     blog.subtitle?.trim() || blog.content?.trim() || "";

@@ -115,7 +115,7 @@ export default function BlogReviewModal({
   }, [blog.id]);
 
   const author = blog.author || ({} as Post["author"]);
-  const cover = blog.image || blog.coverImage;
+  const cover = blog.image;
   const initial = author.name?.charAt(0)?.toUpperCase() || "U";
   const submitted = blog.created_at
     ? new Date(blog.created_at).toLocaleDateString(undefined, {
@@ -208,19 +208,6 @@ export default function BlogReviewModal({
           )}
 
           <div className="px-3 py-5 sm:px-6 sm:py-7 lg:px-10">
-            {!!blog.tags?.length && (
-              <div className="mb-3 flex flex-wrap gap-1.5">
-                {blog.tags.map((t, i) => (
-                  <span
-                    key={i}
-                    className="wrap-anywhere rounded-md bg-gray-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-gray-500"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
-
             <h1 className="wrap-anywhere text-xl font-black leading-tight tracking-tight text-gray-900 sm:text-3xl lg:text-4xl">
               {blog.title}
             </h1>

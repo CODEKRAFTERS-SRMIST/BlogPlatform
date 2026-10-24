@@ -53,9 +53,7 @@ export interface Post {
   author_id: string;
   created_at: string;
   updated_at: string;
-  tags?: string[];
   subtitle?: string;
-  coverImage?: string;
   // The admin review endpoint returns the writer's whole profile so the
   // reviewer sees who they are without a second request; the public feed
   // returns only the first three.
@@ -249,25 +247,27 @@ export const blogApi = {
     return response.data?.data || response.data;
   },
 
+  /**
+   * Creates a story. With submit: true the server writes it straight to
+   * pending_review, so there is no window where a story exists but has not
+   * reached the moderation queue.
+   */
   createPost: async (data: {
     title: string;
     subtitle?: string;
     content: string;
     image?: string;
-    coverImage?: string;
     links?: string;
-    slug?: string;
-    excerpt?: string;
-    tagSlugs?: string[];
+    submit?: boolean;
   }): Promise<Post> => {
-    const mappedData = {
+    const response = await apiClient.post("/blogs", {
       title: data.title,
-      subtitle: data.subtitle || data.excerpt,
+      subtitle: data.subtitle,
       content: data.content,
-      image: data.image || data.coverImage,
-      links: data.links || null,
-    };
-    const response = await apiClient.post("/blogs", mappedData);
+      image: data.image,
+      links: data.links ?? null,
+      submit: data.submit === true,
+    });
     return response.data?.data || response.data;
   },
 
