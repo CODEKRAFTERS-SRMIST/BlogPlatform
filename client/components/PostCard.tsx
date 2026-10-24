@@ -21,10 +21,20 @@ interface PostCardProps {
    * to share and nobody to like them.
    */
   showActions?: boolean;
+  /**
+   * Sends a draft to the admin queue.
+   *
+   * Without this a story saved as a draft had no way out of the library:
+   * the endpoint existed, the service worked, and nothing in the interface
+   * ever called either. Drafts simply accumulated, and their authors had no
+   * way to know the admin had never been asked to look.
+   */
+  onSubmitForReview?: () => void;
+  submitting?: boolean;
 }
 
 const PostCard = forwardRef<HTMLDivElement, PostCardProps>(
-  ({ post, onClick, onDelete, onLike, isLiked, showDelete = false, showActions = true }, ref) => {
+  ({ post, onClick, onDelete, onLike, isLiked, showDelete = false, showActions = true, onSubmitForReview, submitting = false }, ref) => {
     const [showShareModal, setShowShareModal] = useState(false);
     const [coverFailed, setCoverFailed] = useState(false);
     const cover = post.image || post.coverImage;
@@ -82,6 +92,29 @@ const PostCard = forwardRef<HTMLDivElement, PostCardProps>(
               'bg-gray-50 text-gray-600 border-gray-100'
             }`}>
               {post.status.replace('_', ' ')}
+            </div>
+          )}
+
+          {/* A draft is the one status the author can still act on, so the
+              card says what it is waiting for and offers the single thing
+              that moves it along. Published, in review and rejected stories
+              are all out of the author's hands and get no button. */}
+          {post.status === 'draft' && onSubmitForReview && (
+            <div className="w-full rounded-xl border border-amber-100 bg-amber-50/70 px-2.5 py-2">
+              <p className="text-[11px] font-semibold leading-snug text-amber-800">
+                No admin has seen this yet.
+              </p>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSubmitForReview();
+                }}
+                className="mt-2 w-full rounded-lg bg-black px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
+              >
+                {submitting ? 'Sending…' : 'Send for review'}
+              </button>
             </div>
           )}
 

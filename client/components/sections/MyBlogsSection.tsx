@@ -177,16 +177,21 @@ interface MyBlogsSectionProps {
   handleLike: (id: string) => void;
   handlePostClick: (post: Post) => void;
   handleDeletePost: (id: string) => void;
+  handleSubmitForReview?: (id: string) => void;
+  /** The story currently being sent, so only its own button says "Sending". */
+  submittingId?: string | null;
   setActiveSection: (section: Section) => void;
 }
 
-export function MyBlogsSection({ 
-  myPosts, 
-  likedPosts, 
-  handleLike, 
+export function MyBlogsSection({
+  myPosts,
+  likedPosts,
+  handleLike,
   handlePostClick,
   handleDeletePost,
-  setActiveSection 
+  handleSubmitForReview,
+  submittingId = null,
+  setActiveSection
 }: MyBlogsSectionProps) {
   return (
     <motion.div
@@ -247,6 +252,12 @@ export function MyBlogsSection({
                     showDelete
                     showActions={false}
                     onDelete={() => handleDeletePost(post.id)}
+                    onSubmitForReview={
+                      handleSubmitForReview
+                        ? () => handleSubmitForReview(post.id)
+                        : undefined
+                    }
+                    submitting={submittingId === post.id}
                   />
                 </motion.div>
               ))

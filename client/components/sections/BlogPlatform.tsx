@@ -308,6 +308,41 @@ export default function BlogPlatform() {
   };
 
 
+  /*
+   * Sends a draft to the admin queue.
+   *
+   * blogApi.submitPost and the endpoint behind it have both been here all
+   * along, and nothing ever called them. A story that ended up as a draft -
+   * written before the editor submitted in one write, or saved without
+   * submitting - sat in the library for ever: no admin was ever asked to
+   * look at it, and the author had no way to ask.
+   */
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
+
+  const handleSubmitForReview = async (id: string) => {
+    const post = myPosts.find((p) => p.id === id);
+    if (post && post.status !== "draft") {
+      toast.error("Only a draft can be sent for review.");
+      return;
+    }
+
+    try {
+      setSubmittingId(id);
+      await blogApi.submitPost(id);
+      // Read the new status back rather than assuming it; the library is the
+      // only place this story's state is shown.
+      await refetchMyPosts();
+      toast.success(
+        "Sent for review. It goes live once an admin approves it.",
+      );
+    } catch (err) {
+      const message = handleApiError(err);
+      toast.error(message);
+    } finally {
+      setSubmittingId(null);
+    }
+  };
+
   const handleDeletePost = async (id: string) => {
     const postToDelete = myPosts.find((p) => p.id === id);
     const canRemovePublished = user?.role === "admin" || Boolean(user?.is_super_admin);
@@ -484,6 +519,8 @@ export default function BlogPlatform() {
             handleLike={handleLike}
             handlePostClick={handlePostClick}
             handleDeletePost={handleDeletePost}
+            handleSubmitForReview={handleSubmitForReview}
+            submittingId={submittingId}
             setActiveSection={setActiveSection}
           />
         )}
