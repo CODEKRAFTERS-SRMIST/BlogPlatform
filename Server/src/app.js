@@ -44,8 +44,42 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+/*
+ * Which sites a browser may call this API from.
+ *
+ * FRONTEND_URL takes a comma-separated list, because the same backend
+ * answers for the site under more than one name: the vercel.app address
+ * Vercel gives every project, and the club's own domain. A single value
+ * meant that pointing the domain at the site refused every request from
+ * it, and said so only in the browser console - the server logged a
+ * perfectly ordinary 200 for the preflight and nothing else.
+ *
+ * Trailing slashes are stripped on both sides. An Origin header never
+ * carries one, so "https://example.com/" in the environment would match
+ * nothing, which is a miserable thing to debug.
+ */
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+  .split(',')
+  .map((value) => value.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin(origin, callback) {
+    // No Origin header at all: curl, Render's health check, a server-side
+    // fetch, the Next rewrite. CORS is a rule the browser enforces on behalf
+    // of a page, and there is no page here to protect.
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin.replace(/\/+$/, ''))) {
+      return callback(null, true);
+    }
+
+    // Refuse by withholding the header rather than throwing. Throwing turns
+    // a CORS refusal into a 500, which buries the real reason under a stack
+    // trace; this way the browser reports it as what it is.
+    logger.warn(`CORS: refused origin ${origin} (allowed: ${allowedOrigins.join(', ')})`);
+    return callback(null, false);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-CSRF-Token'],
