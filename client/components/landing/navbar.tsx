@@ -36,8 +36,15 @@ export function Navbar() {
     setIsScrolled((prev) => (prev === next ? prev : next))
   })
 
+  /*
+   * The bar sits above the reading panel (z-200) and below the overlays
+   * meant to own the whole screen - sharing (250) and the full-size image
+   * (260). At z-50 the panel covered it, so opening a story from the feed
+   * lost the navigation while opening the same story by its own URL kept
+   * it. Same story, same chrome, whichever way you came in.
+   */
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 px-3 pt-3 sm:px-6 sm:pt-5">
+    <nav className="fixed top-0 left-0 right-0 z-[210] px-3 pt-3 sm:px-6 sm:pt-5">
       {/*
        * What this pill is allowed to change when you scroll past 24px is
        * deliberately narrow: colour and shadow, nothing else.

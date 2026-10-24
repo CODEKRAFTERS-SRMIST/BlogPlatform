@@ -278,7 +278,7 @@ export default function BlogDetailModal({
       exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
       onClick={closeModal}
-      className={`fixed inset-0 bg-black/85 z-[200] flex items-center justify-center p-2 sm:p-4 md:p-8 ${
+      className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/85 p-2 pt-[4.75rem] sm:p-4 sm:pt-[5.75rem] md:p-8 md:pt-[6rem] ${
         closing ? 'pointer-events-none' : ''
       }`}
     >
