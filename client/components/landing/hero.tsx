@@ -164,6 +164,19 @@ export function Hero() {
   const paperGlowX = useTransform(smoothX, [-500, 500], ["-25%", "25%"]);
 
   /*
+   * How the three words arrive.
+   *
+   * They used to come in at the same speed everywhere, and that speed was
+   * chosen for a phone still laying the page out - which on a laptop reads
+   * as a flinch rather than an entrance. The slow version is the one worth
+   * watching and costs a desktop nothing; the quick one stays exactly as it
+   * was, because the device it was tuned for has not got faster.
+   */
+  const entrance = lite
+    ? { duration: 0.6, stagger: 0.1 }
+    : { duration: 1.15, stagger: 0.19 };
+
+  /*
    * The parallax needs a mouse, so it can only start once this is in a
    * browser - but the hero itself does not. It used to render `null` until a
    * mount flag flipped, which threw away the server-rendered first paint and
@@ -185,6 +198,35 @@ export function Hero() {
 
   return (
     <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#FEF0D8] px-6 pt-32 pb-20 lg:flex-row lg:px-20 lg:pt-0">
+      {/*
+        * A warm light that follows the cursor.
+        *
+        * One element, one radial gradient, moved by transform only - no
+        * filter, no gradient rebuilt per frame, nothing that forces a
+        * relayout. It rides the springs the parallax already uses, so
+        * following the pointer costs no new listener, and it multiplies
+        * into the cream rather than sitting on top of it, which deepens the
+        * paper instead of washing it out.
+        *
+        * Off entirely without a pointer: there is no cursor to follow on a
+        * phone, and this is the largest painted layer on the page.
+        */}
+      {!lite && (
+        <motion.div
+          aria-hidden
+          style={{ x: smoothX, y: smoothY }}
+          className="pointer-events-none absolute top-1/2 left-1/2 z-0 h-[70vmax] w-[70vmax] -translate-x-1/2 -translate-y-1/2 mix-blend-multiply"
+        >
+          <div
+            className="h-full w-full rounded-full"
+            style={{
+              background:
+                "radial-gradient(circle, rgba(245,184,0,0.22) 0%, rgba(245,184,0,0.10) 32%, rgba(245,184,0,0) 68%)",
+            }}
+          />
+        </motion.div>
+      )}
+
       {/* Dynamic Watermark */}
       {/* It used to turn a full circle every 150 seconds. A 45vw block of
           text is the largest layer on the page, and rotating it never
@@ -225,8 +267,8 @@ export function Hero() {
                 initial={{ x: "-120vw", filter: "blur(20px)" }}
                 animate={{ x: 0, filter: "blur(0px)" }}
                 transition={{
-                  duration: 0.6,
-                  delay: idx * 0.1,
+                  duration: entrance.duration,
+                  delay: idx * entrance.stagger,
                   ease: [0.22, 1, 0.36, 1],
                 }}
                 className={`
@@ -239,7 +281,7 @@ export function Hero() {
                 {/* Eighteen blurred particles across the three words, for
                     half a second, once. Worth it on a laptop, not worth it
                     on the phone that is still laying the page out. */}
-                {!lite && <SkidDust delay={idx * 0.1} />}
+                {!lite && <SkidDust delay={idx * entrance.stagger} />}
               </motion.h1>
             </div>
           ))}
