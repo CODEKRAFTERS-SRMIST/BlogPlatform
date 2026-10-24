@@ -11,7 +11,6 @@ import {
   LogOut,
   LogIn,
   ShieldCheck,
-  Users,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Section } from "@/types/blog";
@@ -40,15 +39,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   const isAdmin = userRole === "admin";
 
   /*
-   * Review and Manage are the only entries in this bar that leave the page -
-   * they are routes, not sections of the platform - so tapping one costs a
-   * route load where the other tabs cost nothing. Asking for it up front
-   * means the JavaScript and the server payload are already in the browser
-   * by the time it is tapped, which is the difference between a tab that
-   * responds and one that sits there.
+   * Admin is the only entry in this bar that leaves the page - it is a route,
+   * not a section of the platform - so tapping it costs a route load where
+   * the other tabs cost nothing. Asking for it up front means the JavaScript
+   * and the server payload are already in the browser by the time it is
+   * tapped, which is the difference between a tab that responds and one that
+   * sits there.
    *
-   * Prefetching is per path, so one call covers both ?tab= variants. It is a
-   * no-op in `next dev`, where routes are compiled on demand.
+   * It is a no-op in `next dev`, where routes are compiled on demand.
    */
   useEffect(() => {
     if (isAdmin) {
@@ -91,26 +89,24 @@ const Sidebar: React.FC<SidebarProps> = ({
       activeShadow: "0 0 25px rgba(16, 24, 40, 0.4)",
     },
     {
+      /*
+       * One admin entry, where there used to be two.
+       *
+       * "Review" and "Manage" were separate buttons that opened the same
+       * page, /admin/members, differing only in which of that page's own
+       * tabs came up first - so the dock asked a question the page then
+       * asked again, and two of the eight icons led to one place. This
+       * lands on Story Review, which every admin can use; Members is one
+       * tap away inside the page and stays super-admin only.
+       */
       id: "admin_review",
-      label: "Review",
-      href: "/admin/members?tab=review",
+      label: "Admin",
+      href: "/admin/members",
       icon: <ShieldCheck size={24} strokeWidth={2.5} />,
       color: "bg-amber-600",
       shadow: "shadow-amber-600/30",
       activeShadow: "0 0 25px rgba(217, 119, 6, 0.4)",
       adminOnly: true,
-    },
-    {
-      id: "admin_members",
-      label: "Manage",
-      icon: <Users size={24} strokeWidth={2.5} />,
-      color: "bg-amber-600",
-      shadow: "shadow-amber-600/30",
-      activeShadow: "0 0 25px rgba(217, 119, 6, 0.4)",
-      // Story Review lives here as well, so this is open to every admin;
-      // the Members tab inside the page stays super-admin only.
-      adminOnly: true,
-      href: "/admin/members?tab=members",
     },
     {
       id: "settings",

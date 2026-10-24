@@ -6,7 +6,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mail, Lock, ChevronRight, User, ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
 import { authApi, handleApiError, isPendingApprovalError } from "@/lib/api";
-import { publishAuthUser, useAuth, refreshAuth, User as AuthUser } from "@/lib/useAuth";
+import { publishAuthUser, useAuth, refreshAuth, homeFor, User as AuthUser } from "@/lib/useAuth";
 import { resetSignedOutLatch } from "@/lib/api-client";
 import { GridPattern } from "@/components/background";
 
@@ -30,13 +30,6 @@ function LoginForm() {
       setSuccessMessage("Registration successful! Please wait for admin approval before logging in.");
     }
   }, [searchParams]);
-
-  /** Where a signed-in account belongs, given its role and status. */
-  const homeFor = (u: { role?: string; is_super_admin?: boolean; status?: string }) => {
-    if (u.is_super_admin || u.role === "admin") return "/admin/dashboard";
-    if (u.status === "pending") return "/pending";
-    return "/platform";
-  };
 
   /**
    * Somebody who is already signed in has no business on the login form, so

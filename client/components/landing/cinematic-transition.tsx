@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import TextLine from "./TextLine";
 import FloatingGlyph from "./FloatingGlyph";
+import { useMotionMode } from "@/lib/useMotionMode";
 
 const FLOATING_ELEMENTS = [
   {
@@ -97,6 +98,18 @@ const FLOATING_ELEMENTS = [
 ];
 
 export function CinematicTransition() {
+  /*
+   * Decided once, here, and handed down.
+   *
+   * Everything in this section is decoration, and all of it was being run at
+   * full strength on every device. The mode is settled before this component
+   * exists - it is loaded on demand, well after the hero above it has
+   * mounted and resolved it - so the expensive version is never rendered on
+   * a phone even for a frame.
+   */
+  const mode = useMotionMode();
+  const lite = mode !== "full";
+
   const containerRef = useRef<HTMLDivElement>(null);
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
@@ -135,13 +148,17 @@ export function CinematicTransition() {
   );
 
   useEffect(() => {
+    // Nothing to follow on a touch screen, and following it costs two
+    // springs running against the largest text layer on the page.
+    if (lite) return;
+
     const handleMouseMove = (e: MouseEvent) => {
       mouseX.set(e.clientX - window.innerWidth / 2);
       mouseY.set(e.clientY - window.innerHeight / 2);
     };
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [mouseX, mouseY]);
+  }, [mouseX, mouseY, lite]);
 
   /*
    * 300vh, down from 400.
@@ -154,20 +171,31 @@ export function CinematicTransition() {
    */
   return (
     <section ref={containerRef} className="relative h-[300vh] bg-[#FEF0D8]">
-      {/* Watermark */}
-      <motion.div
-        style={{ x: watermarkX, y: watermarkY }}
-        className="pointer-events-none fixed inset-0 z-0 flex select-none items-center justify-center opacity-[0.02]"
-      >
-        <div className="text-[40vw] font-black leading-none tracking-tighter text-[#0B1220]">
-          BLOG
+      {/* Watermark. 40vw of text is the biggest single layer on the page;
+          when it drifts with the cursor it is a composited layer being moved
+          every frame, so without a cursor to follow it is a plain div. */}
+      {lite ? (
+        <div className="pointer-events-none fixed inset-0 z-0 flex select-none items-center justify-center opacity-[0.02]">
+          <div className="text-[40vw] font-black leading-none tracking-tighter text-[#0B1220]">
+            BLOG
+          </div>
         </div>
-      </motion.div>
+      ) : (
+        <motion.div
+          style={{ x: watermarkX, y: watermarkY }}
+          className="pointer-events-none fixed inset-0 z-0 flex select-none items-center justify-center opacity-[0.02]"
+        >
+          <div className="text-[40vw] font-black leading-none tracking-tighter text-[#0B1220]">
+            BLOG
+          </div>
+        </motion.div>
+      )}
 
       <div className="sticky top-0 h-screen w-full flex flex-col items-center justify-center overflow-hidden">
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-40">
           <div className="space-y-4 md:space-y-8 max-w-6xl px-4 flex flex-col items-center">
             <TextLine
+              mode={mode}
               text="A growing library of"
               progress={smoothProgress}
               range={[0.24, 0.44]}
@@ -175,6 +203,7 @@ export function CinematicTransition() {
             />
             <div className="flex flex-wrap items-baseline justify-center gap-1 md:gap-2">
               <TextLine
+                mode={mode}
                 text="Member"
                 progress={smoothProgress}
                 range={[0.44, 0.62]}
@@ -183,6 +212,7 @@ export function CinematicTransition() {
                 isYellow
               />
               <TextLine
+                mode={mode}
                 text="-written blogs"
                 progress={smoothProgress}
                 range={[0.44, 0.62]}
@@ -191,6 +221,7 @@ export function CinematicTransition() {
               />
             </div>
             <TextLine
+              mode={mode}
               text="published with intent"
               progress={smoothProgress}
               range={[0.62, 0.82]}
@@ -206,14 +237,17 @@ export function CinematicTransition() {
               scale,
               rotate,
               y,
-              filter,
+              // Animated blur means re-rastering this block every frame of
+              // the scroll. The fade and the scale carry the same beat.
+              ...(lite ? {} : { filter }),
             }}
             className="relative"
           >
             <motion.div
-              animate={{
-                y: [0, -10, 0],
-              }}
+              // A four-second bob that never stops. It keeps the largest
+              // text on the screen repainting for as long as the tab is
+              // open, which is a poor trade for ten pixels of drift.
+              animate={lite ? undefined : { y: [0, -10, 0] }}
               transition={{
                 duration: 4,
                 repeat: Number.POSITIVE_INFINITY,
@@ -234,6 +268,7 @@ export function CinematicTransition() {
           {FLOATING_ELEMENTS.map((item, index) => (
             <FloatingGlyph
               key={index}
+              mode={mode}
               icon={item.icon}
               letter={item.letter}
               x={item.x}

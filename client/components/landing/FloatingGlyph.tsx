@@ -2,7 +2,58 @@
 
 import { motion, useTransform } from "framer-motion"
 
-export default function FloatingGlyph({ icon: Icon, letter, x, y, rotate, scale, progress, delay }: any) {
+/**
+ * One of the eight icons that scatter out from the logo.
+ *
+ * Pure decoration, and on a phone most of them are scattered to x: ±380,
+ * which is off the side of a 375px screen - so the full version was paying
+ * for eight elements' worth of per-frame work to move things nobody could
+ * see. The lite version puts each one where it ends up and fades it in.
+ */
+export default function FloatingGlyph({ mode = "full", ...props }: any) {
+  if (mode === "full") return <FloatingGlyphFull {...props} />
+  return <FloatingGlyphLite {...props} />
+}
+
+/* ------------------------------------------------------------------ lite -
+ *
+ * One moving value - the fade - against the full version's eight.
+ *
+ * The position is a plain CSS transform written once, the breathing loop is
+ * gone (it ran forever, on all eight, for the life of the page), and so are
+ * the willChange hints: those exist to promote a moving element to its own
+ * compositor layer, and nothing here moves.
+ */
+function FloatingGlyphLite({ icon: Icon, letter, x, y, rotate, scale, progress, delay }: any) {
+  const opacity = useTransform(progress, [0.12 + delay * 0.1, 0.3 + delay * 0.1], [0, 1])
+
+  return (
+    <motion.div
+      style={{
+        opacity,
+        position: "absolute",
+        left: "50%",
+        top: "50%",
+        marginLeft: -32,
+        marginTop: -32,
+        transform: `translate(${x}px, ${y}px) rotate(${rotate}deg) scale(${scale})`,
+      }}
+      className="z-10"
+    >
+      <div className="relative p-4 bg-white rounded-2xl border-2 border-[#0B1220]/15 shadow-sm">
+        <div className="relative flex items-center justify-center w-10 h-10">
+          <Icon className="w-8 h-8 text-[#0B1220]" strokeWidth={2.5} />
+          <span className="absolute -top-6 -right-6 text-5xl font-black text-[#0B1220]/5 select-none pointer-events-none italic">
+            {letter}
+          </span>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+/* ------------------------------------------------------------------ full - */
+function FloatingGlyphFull({ icon: Icon, letter, x, y, rotate, scale, progress, delay }: any) {
   const scatterProgress = useTransform(progress, [0.12, 0.4], [0, 1])
   const glyphProgress = useTransform(scatterProgress, [delay * 0.5, Math.min(delay * 0.5 + 0.5, 1)], [0, 1])
 

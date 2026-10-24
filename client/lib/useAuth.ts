@@ -101,6 +101,23 @@ export function notifySignedOut() {
   publish({ user: null, isLoggedIn: false, loading: false });
 }
 
+/**
+ * Where a signed-in account belongs.
+ *
+ * The navbar's Dashboard link and the login page's redirect both have to
+ * answer this, and they have to answer it identically: if the link sent an
+ * admin to /platform while the guard there sent them to /admin/dashboard,
+ * the two would bounce the user between them. One function, one answer.
+ */
+export function homeFor(
+  u: { role?: string; is_super_admin?: boolean; status?: string } | null,
+): string {
+  if (!u) return '/login';
+  if (u.is_super_admin || u.role === 'admin') return '/admin/dashboard';
+  if (u.status === 'pending') return '/pending';
+  return '/platform';
+}
+
 /** What the store currently believes, for code outside React. */
 export function getAuthSnapshot(): AuthState {
   return state;
@@ -116,9 +133,30 @@ export function useAuth() {
     };
   }, [rerender]);
 
-  // Only the first mount actually hits the network; later ones read the store.
+  /*
+   * Checks on mount whether what the store holds has gone stale.
+   *
+   * It used to ask the network only on the very first mount, so the answer
+   * fetched at sign-in was kept for the rest of the visit. A member promoted
+   * to admin therefore went on being shown a member's dock until they
+   * reloaded the page - the server knew, every protected route read the role
+   * fresh from the database, and only the browser was still repeating what it
+   * had been told at login.
+   *
+   * Moving between pages now re-asks, at most once every REFRESH_AFTER_MS,
+   * and callers arriving together share the one request. A promotion shows up
+   * on the next navigation rather than the next reload.
+   *
+   * Only for somebody who is signed in. A visitor who is not has nothing to
+   * re-check - they would just be asking a question already answered with a
+   * 401 on every page they open - and a sign-in elsewhere announces itself
+   * through publishAuthUser or the auth_changed key.
+   */
   useEffect(() => {
-    if (state.loading) loadUser();
+    const stale = Date.now() - lastFetchedAt > REFRESH_AFTER_MS;
+    if (state.loading || (state.isLoggedIn && stale)) {
+      loadUser();
+    }
   }, []);
 
   useEffect(() => {

@@ -353,12 +353,26 @@ export default function BlogPlatform() {
     return (
       <div className="min-h-screen bg-[#f8f7f4] font-sans text-gray-900 overflow-x-hidden relative">
         <GridPattern />
+        {/*
+          * The same dock as the loaded page, role and all.
+          *
+          * This one was rendered without userRole, so while the posts were
+          * being fetched every admin was handed a member's dock - the admin
+          * entry simply filtered itself out. Arriving here from an admin page
+          * meant a fresh mount with no posts yet, which is exactly this
+          * branch: tap a tab, watch the admin button vanish, and wait for it
+          * to come back when the fetch finished. On a cold backend that wait
+          * is the whole point at which somebody concludes they have been
+          * demoted.
+          */}
         <Sidebar
           activeSection={activeSection}
           onSectionChange={setActiveSection}
           onLogout={logout}
           onLogin={() => setShowAuthModal(true)}
           isLoggedIn={isLoggedIn}
+          userRole={user?.role}
+          isSuperAdmin={user?.is_super_admin}
         />
         <main className="pb-mobile-nav relative z-10 min-h-screen w-full min-w-0 flex flex-col items-center justify-center pt-20 sm:pt-24 md:pt-12 px-3 sm:px-4">
           <div className="text-center space-y-4">

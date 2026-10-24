@@ -3,13 +3,22 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /*
+   * This site is light, and says so.
+   *
+   * Without this the browser assumes a page can go either way and styles
+   * its own controls - form fields, scrollbars, the autofill highlight -
+   * dark on a phone that is set to dark mode, on top of our white cards.
+   */
+  color-scheme: light;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-app);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --animate-float-breath: float-breath 6s ease-in-out infinite;
 
   @keyframes float-breath {
@@ -22,17 +31,70 @@
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/*
+ * There was a dark-mode block here, and it was making text disappear.
+ *
+ * It swapped --foreground to #ededed whenever the phone was set to dark,
+ * and body reads its colour from that. But no page in this app has a dark
+ * design: every one of them paints its own white or cream background over
+ * the top - bg-white, bg-[#f8f7f4], bg-[#FEF0D8]. So the background stayed
+ * white and the text went near-white with it, and any text that inherited
+ * its colour from body rather than naming one simply vanished.
+ *
+ * Most phones ship set to dark, which is why this read as "content
+ * disappears on mobile" rather than as a dark-mode bug.
+ *
+ * Supporting dark properly means real dark tokens and going through every
+ * hardcoded bg-white and text-[#0B1220] in the app. Until that exists, the
+ * honest thing is to not claim support for it.
+ */
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-app), "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/*
+ * Animated blur, switched off where it is not affordable.
+ *
+ * The hero slides three 20vw headings in from the left while animating
+ * filter from blur(20px) to blur(0px), and drops the article card in from
+ * blur(10px). Blur cannot be composited: the browser has to re-rasterise
+ * the whole layer for every frame, and these are the largest layers on the
+ * first screen. On a mid-range phone that is most of the cost of the page
+ * appearing.
+ *
+ * This is CSS rather than a prop because it has to be true on the very
+ * first frame. The JavaScript that decides everything else about motion
+ * cannot run until after hydration, by which point these have already
+ * started. The !important is what lets it beat the inline style Framer
+ * Motion writes.
+ */
+@media (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .motion-no-blur {
+    filter: none !important;
+  }
+}
+
+/*
+ * Somebody who has asked their device to reduce motion gets that answered
+ * here as well as in JavaScript.
+ *
+ * This covers everything driven by CSS - the thirty-odd animate-pulse and
+ * animate-spin loops, the float-breath keyframes, every transition. Framer
+ * Motion does not animate through CSS, so it cannot be reached this way;
+ * useMotionMode handles that side and resolves to 'off' on the same signal.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /*

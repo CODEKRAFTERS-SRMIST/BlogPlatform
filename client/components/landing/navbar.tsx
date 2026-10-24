@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { motion, AnimatePresence, useScroll, useMotionValueEvent } from "framer-motion"
-import { ArrowRight, Home, Globe, ExternalLink, Menu, X } from "lucide-react"
+import { ArrowRight, Home, Globe, ExternalLink, Menu, X, LayoutDashboard } from "lucide-react"
+import { useAuth, homeFor } from "@/lib/useAuth"
 
 const TABS = [
   { name: "HOME", href: "/", icon: Home },
@@ -15,11 +16,18 @@ const TABS = [
 
 export function Navbar() {
   const pathname = usePathname()
+  const { user, isLoggedIn, loading: authLoading } = useAuth()
   const [hoveredTab, setHoveredTab] = useState<string | null>(null)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
+  const [isHidden, setIsHidden] = useState(false)
+  const lastScrollY = useRef(0)
 
   const { scrollY, scrollYProgress } = useScroll()
+
+  /* Signed in, this is the button's destination; the login page's own
+     redirect reads the same function, so the two cannot disagree. */
+  const accountHref = homeFor(user)
 
   /*
    * The bar sits on the page as a floating glass pill, so it needs to firm up
@@ -27,14 +35,46 @@ export function Navbar() {
    * fine, over a white blog card it disappears.
    *
    * Setting state to the value it already holds is a no-op in React, so this
-   * listener re-renders twice per page: once crossing 24px going down, once
-   * coming back. The pill itself moves on CSS transitions rather than a
-   * motion value, so none of this costs a frame while scrolling.
+   * listener re-renders a handful of times per page rather than per frame:
+   * twice for the pill, once per change of direction for the bar itself.
    */
   useMotionValueEvent(scrollY, "change", (v) => {
     const next = v > 24
     setIsScrolled((prev) => (prev === next ? prev : next))
+
+    /*
+     * Out of the way going down, back the moment you go up.
+     *
+     * The 8px floor ignores the jitter of a trackpad settling and the
+     * rubber-band at either end of the page, both of which would otherwise
+     * flap the bar. Nothing hides within the first 140px, so the top of a
+     * page always has its navigation, and the bar moves on a transform -
+     * no layout, no reflow of the page underneath.
+     */
+    const previous = lastScrollY.current
+    if (Math.abs(v - previous) < 8) return
+    lastScrollY.current = v
+    setIsHidden(v > previous && v > 140)
   })
+
+  // The menu hangs off the bar, so the bar has to stay while it is open.
+  useEffect(() => {
+    if (isMobileMenuOpen) setIsHidden(false)
+  }, [isMobileMenuOpen])
+
+  /*
+   * A story opening is not a scroll, so the bar has to be told about it.
+   *
+   * Opening one from the feed pushes its address without navigating and
+   * puts the reading panel over the page, so scrollY stops changing and the
+   * bar keeps whatever state it was last left in. Having scrolled down the
+   * feed to find the story, that state is hidden - so the story would open
+   * with no navigation above it and no way to scroll it back, which is the
+   * thing the z-index fix was for in the first place.
+   */
+  useEffect(() => {
+    setIsHidden(false)
+  }, [pathname])
 
   /*
    * The bar sits above the reading panel (z-200) and below the overlays
@@ -44,7 +84,11 @@ export function Navbar() {
    * it. Same story, same chrome, whichever way you came in.
    */
   return (
-    <nav className="fixed top-0 left-0 right-0 z-[210] px-3 pt-3 sm:px-6 sm:pt-5">
+    <motion.nav
+      animate={{ y: isHidden ? "-140%" : "0%" }}
+      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+      className="fixed top-0 left-0 right-0 z-[210] px-3 pt-3 sm:px-6 sm:pt-5"
+    >
       {/*
        * What this pill is allowed to change when you scroll past 24px is
        * deliberately narrow: colour and shadow, nothing else.
@@ -76,9 +120,11 @@ export function Navbar() {
           className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] origin-left bg-gradient-to-r from-[#F2B200] via-[#F2B200] to-[#F2B200]/0"
         />
 
-        {/* Logo */}
-        <Link href="/" className="flex shrink-0 items-center gap-2.5 sm:gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0B1220] shadow-sm sm:h-10 sm:w-10">
+        {/* Logo. The mark carries the brand colour as a ring rather than a
+            flat drop shadow, and leans in slightly under the cursor - enough
+            to read as the way home without turning into an animation. */}
+        <Link href="/" className="group flex shrink-0 items-center gap-2.5 sm:gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0B1220] shadow-[0_8px_18px_-8px_rgba(11,18,32,0.8)] ring-1 ring-[#F2B200]/30 transition-transform duration-300 group-hover:-rotate-3 group-hover:scale-105 sm:h-10 sm:w-10">
             <Image
               src="/ck_logo.svg"
               alt="CodeKrafters Logo"
@@ -88,8 +134,13 @@ export function Navbar() {
               priority
             />
           </div>
-          <span className="text-lg font-black tracking-tighter text-[#0B1220] sm:text-xl">
-            BLOG <span className="text-[#F2B200]">SITE</span>
+          <span className="flex flex-col leading-none">
+            <span className="text-lg font-black tracking-tighter text-[#0B1220] sm:text-xl">
+              BLOG <span className="text-[#F2B200]">SITE</span>
+            </span>
+            <span className="hidden text-[8px] font-black uppercase tracking-[0.28em] text-[#0B1220]/40 sm:block">
+              Code Krafters
+            </span>
           </span>
         </Link>
 
@@ -136,15 +187,40 @@ export function Navbar() {
           </div>
         </div>
 
-        {/* Right Actions */}
+        {/*
+          * Right actions. Signed in, this is the way back to your own pages;
+          * signed out, it is the way in. It used to be LOG IN either way, so
+          * the only thing the bar offered a signed-in member was a second
+          * trip through the login form.
+          *
+          * While the session is still being read, neither label is honest, so
+          * the slot holds its shape and says nothing rather than guessing and
+          * correcting itself a moment later.
+          */}
         <div className="flex shrink-0 items-center gap-2">
-          <Link
-            href="/login"
-            className="hidden h-11 items-center gap-2 rounded-full bg-[#0B1220] px-7 text-[11px] font-black tracking-widest text-white shadow-lg transition-all hover:bg-[#F2B200] hover:text-[#0B1220] active:scale-95 sm:flex"
-          >
-            LOG IN
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+          {authLoading ? (
+            <div
+              className="hidden h-11 w-[152px] animate-pulse rounded-full bg-[#0B1220]/10 sm:block"
+              aria-hidden
+            />
+          ) : (
+            <Link
+              href={isLoggedIn ? accountHref : "/login"}
+              className="hidden h-11 items-center gap-2 rounded-full bg-[#0B1220] px-7 text-[11px] font-black tracking-widest text-white shadow-lg transition-all hover:bg-[#F2B200] hover:text-[#0B1220] active:scale-95 sm:flex"
+            >
+              {isLoggedIn ? (
+                <>
+                  <LayoutDashboard className="h-4 w-4" />
+                  DASHBOARD
+                </>
+              ) : (
+                <>
+                  LOG IN
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
+            </Link>
+          )}
 
           {/* Mobile Menu Toggle */}
           <button
@@ -228,19 +304,30 @@ export function Navbar() {
                   visible: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 400, damping: 28 } }
                 }}
               >
-                <Link
-                  href="/login"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="mt-2 flex items-center justify-center gap-2 rounded-2xl bg-[#F2B200] p-4 font-black tracking-widest text-[#0B1220] shadow-[0_0_20px_rgba(242,178,0,0.2)] transition-all hover:brightness-110 active:scale-95 sm:hidden"
-                >
-                  LOG IN
-                  <ArrowRight className="h-5 w-5" />
-                </Link>
+                {!authLoading && (
+                  <Link
+                    href={isLoggedIn ? accountHref : "/login"}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="mt-2 flex items-center justify-center gap-2 rounded-2xl bg-[#F2B200] p-4 font-black tracking-widest text-[#0B1220] shadow-[0_0_20px_rgba(242,178,0,0.2)] transition-all hover:brightness-110 active:scale-95 sm:hidden"
+                  >
+                    {isLoggedIn ? (
+                      <>
+                        <LayoutDashboard className="h-5 w-5" />
+                        DASHBOARD
+                      </>
+                    ) : (
+                      <>
+                        LOG IN
+                        <ArrowRight className="h-5 w-5" />
+                      </>
+                    )}
+                  </Link>
+                )}
               </motion.div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-    </nav>
+    </motion.nav>
   )
 }

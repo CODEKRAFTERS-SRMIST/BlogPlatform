@@ -3,6 +3,7 @@
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { useMotionMode } from "@/lib/useMotionMode";
 
 const heroItems = [
   {
@@ -56,8 +57,18 @@ function SkidDust({ delay }: { delay: number }) {
   );
 }
 
-function UnscrambleText({ word }: { word: string }) {
+/**
+ * The word that scrambles when you point at it.
+ *
+ * It splits the word into one animated span per letter and waits for
+ * onMouseEnter. A phone has no cursor to enter with, so on a touch screen
+ * those spans mounted, sat there, and could never once do the thing they
+ * exist for. `lite` renders the word.
+ */
+function UnscrambleText({ word, lite }: { word: string; lite: boolean }) {
   const [hovered, setHovered] = useState(false);
+
+  if (lite) return <>{word}</>;
 
   // Pre-generate random values so they don't change on re-render
   const randomValues = word.split("").map((_, i) => ({
@@ -118,6 +129,19 @@ function UnscrambleText({ word }: { word: string }) {
 }
 
 export function Hero() {
+  /*
+   * 'full' on the server and for the first render here, then whatever the
+   * device actually warrants. The hero is server-rendered, so it has to
+   * agree with the server on that first pass; what it drops below is either
+   * decoration that has already played or a loop that would have run for the
+   * rest of the visit.
+   *
+   * The animated blurs are handled in CSS instead - see .motion-no-blur in
+   * globals.css - because those cost from the very first frame, before any
+   * of this has had a chance to run.
+   */
+  const lite = useMotionMode() !== "full";
+
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
 
@@ -147,13 +171,17 @@ export function Hero() {
    * sit at 0 (dead centre) until the first mousemove arrives.
    */
   useEffect(() => {
+    // Five springs feed off this, including the 45vw watermark. With no
+    // cursor to follow, none of them has anything to say.
+    if (lite) return;
+
     const handleMouseMove = (e: MouseEvent) => {
       mouseX.set(e.clientX - window.innerWidth / 2);
       mouseY.set(e.clientY - window.innerHeight / 2);
     };
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [mouseX, mouseY]);
+  }, [mouseX, mouseY, lite]);
 
   return (
     <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#FEF0D8] px-6 pt-32 pb-20 lg:flex-row lg:px-20 lg:pt-0">
@@ -163,14 +191,22 @@ export function Hero() {
           finished compositing - the phone was redrawing the hero for as long
           as the tab was open, for a movement nobody can perceive at 3 per
           cent opacity. It still drifts with the cursor, which is free. */}
-      <motion.div
-        style={{ x: watermarkX, y: watermarkY }}
-        className="pointer-events-none absolute inset-0 z-0 flex select-none items-center justify-center opacity-[0.03]"
-      >
-        <div className="-rotate-6 text-[45vw] font-black leading-none tracking-tighter text-[#0B1220]">
-          BLOG SITE
+      {lite ? (
+        <div className="pointer-events-none absolute inset-0 z-0 flex select-none items-center justify-center opacity-[0.03]">
+          <div className="-rotate-6 text-[45vw] font-black leading-none tracking-tighter text-[#0B1220]">
+            BLOG SITE
+          </div>
         </div>
-      </motion.div>
+      ) : (
+        <motion.div
+          style={{ x: watermarkX, y: watermarkY }}
+          className="pointer-events-none absolute inset-0 z-0 flex select-none items-center justify-center opacity-[0.03]"
+        >
+          <div className="-rotate-6 text-[45vw] font-black leading-none tracking-tighter text-[#0B1220]">
+            BLOG SITE
+          </div>
+        </motion.div>
+      )}
 
       {/* Left Side: Hero Words */}
       <div className="relative z-20 flex flex-1 flex-col items-start justify-center text-left lg:items-center">
@@ -194,13 +230,16 @@ export function Hero() {
                   ease: [0.22, 1, 0.36, 1],
                 }}
                 className={`
-                  relative z-10 cursor-default text-[20vw] font-black leading-[0.85] tracking-tighter sm:text-[16vw] lg:text-[10vw]
+                  motion-no-blur relative z-10 cursor-default text-[20vw] font-black leading-[0.85] tracking-tighter sm:text-[16vw] lg:text-[10vw]
                   ${item.color}
                   ${item.tilted ? "-rotate-[6deg] lg:-rotate-[4deg] translate-x-[-2vw] translate-y-[2vw]" : ""}
                 `}
               >
-                {item.tilted ? <UnscrambleText word={item.word} /> : item.word}
-                <SkidDust delay={idx * 0.1} />
+                {item.tilted ? <UnscrambleText word={item.word} lite={lite} /> : item.word}
+                {/* Eighteen blurred particles across the three words, for
+                    half a second, once. Worth it on a laptop, not worth it
+                    on the phone that is still laying the page out. */}
+                {!lite && <SkidDust delay={idx * 0.1} />}
               </motion.h1>
             </div>
           ))}
@@ -211,7 +250,7 @@ export function Hero() {
       <div className="relative flex flex-1 items-center justify-center pt-20 lg:pt-0">
         {/* Layered Logo Interaction */}
         <motion.div
-          style={{ x: logoX, y: logoY }}
+          style={lite ? undefined : { x: logoX, y: logoY }}
           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-10 blur-[2px] lg:opacity-20 lg:blur-none"
         >
           <motion.div
@@ -242,7 +281,7 @@ export function Hero() {
 
         {/* Blog Article Visual (Physical Mouse-reactive Paper) */}
         <motion.div
-          style={{ rotate: paperRotate, x: paperX, y: paperY }}
+          style={lite ? undefined : { rotate: paperRotate, x: paperX, y: paperY }}
           initial={{
             y: "-120vh",
             rotate: -30,
@@ -267,11 +306,11 @@ export function Hero() {
             scale: { duration: 0.5, delay: 0.3 },
             filter: { duration: 0.6, delay: 0.3 },
           }}
-          className="relative z-30 w-[280px] overflow-hidden rounded-[2px] bg-white p-5 shadow-[30px_30px_80px_-15px_rgba(11,18,32,0.2)] sm:w-[340px] lg:w-[360px] lg:p-7"
+          className="motion-no-blur relative z-30 w-[280px] overflow-hidden rounded-[2px] bg-white p-5 shadow-[30px_30px_80px_-15px_rgba(11,18,32,0.2)] sm:w-[340px] lg:w-[360px] lg:p-7"
         >
           <div className="absolute inset-0 z-40 overflow-hidden pointer-events-none">
             <motion.div
-              style={{ x: paperGlowX }}
+              style={lite ? undefined : { x: paperGlowX }}
               className="absolute -inset-x-1/4 inset-y-0 bg-[radial-gradient(circle_at_50%_0%,rgba(242,178,0,0.1)_0%,transparent_50%)]"
             />
           </div>

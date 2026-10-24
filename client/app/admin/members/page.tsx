@@ -39,7 +39,9 @@ export default function AdminMembersPage() {
   // Story Review is open to every admin; Members stays super-admin only.
   const [panel, setPanel] = useState<"review" | "members">("review");
 
-  // Opened from the sidebar: "Approvals" lands on review, "Manage" on members
+  // The dock sends you here without a tab, which lands on review. The
+  // parameter is still read so older links - and the page's own tabs - can
+  // ask for either panel by name.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const tab = new URLSearchParams(window.location.search).get("tab");
@@ -202,7 +204,9 @@ export default function AdminMembersPage() {
 
       {/* Floating Sidebar */}
       <Sidebar
-        activeSection={panel === "members" ? "admin_members" : "admin_review"}
+        /* Both panels live behind the single Admin entry in the dock, so
+           it stays lit whichever of them is open. */
+        activeSection="admin_review"
         onSectionChange={(id) => {
           // Carry the chosen section across. Dropping it sent every one of
           // these to the platform's default tab first, so picking "All Blogs"

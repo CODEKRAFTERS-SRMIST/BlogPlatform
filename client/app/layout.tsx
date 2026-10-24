@@ -1,6 +1,27 @@
 import './globals.css'
 import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
 import { Toaster } from 'react-hot-toast'
+
+/**
+ * The font the design was drawn for, actually loaded.
+ *
+ * globals.css has always pointed --font-sans at --font-geist-sans, but
+ * nothing anywhere defined that variable, so it resolved to nothing and the
+ * whole site fell through to the Arial in body's fallback list. Every
+ * font-black heading and every tracking-tighter wordmark was rendering in
+ * Arial Bold.
+ *
+ * next/font downloads the file at build time and serves it from this origin,
+ * so there is no request to Google at runtime and nothing to be blocked or
+ * slow. display: swap means text paints immediately in the fallback and
+ * swaps when the file lands, rather than holding the first paint hostage.
+ */
+const sans = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-app',
+})
 
 /**
  * Where this site lives, for turning relative paths into absolute URLs.
@@ -39,7 +60,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={sans.variable}>
       <body>
         <Toaster
           position="top-center"
