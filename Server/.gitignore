@@ -3,4 +3,17 @@ node_modules/
 npm-debug.log*
 .DS_Store
 
+/src/generated/prisma
 
+# local logs
+*.log
+
+# Scratch, test, and utility scripts
+fix-admin.js
+fix_publish_all.js
+fix_user_auth.js
+scratch_check_users.js
+test-dashboard.js
+test-users.js
+reset-admin-pwd.js
+dump-users.js

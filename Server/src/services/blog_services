@@ -1,0 +1,29 @@
+import prisma from "@prisma/client"
+
+export const BlogService = {
+  createBlog: async (data) => {
+    return await prisma.blog.create({ data });
+  },
+
+  getUserBlogs: async (userId) => {
+    return await prisma.blog.findMany({
+      where: { CreatorId: userId },
+      orderBy: { createdAt: "desc" },
+    });
+  },
+
+  getBlogById: async (id) => {
+    return await prisma.blog.findUnique({ where: { id: Number(id) } });
+  },
+
+  updateBlog: async (id, data) => {
+    return await prisma.blog.update({
+      where: { id: Number(id) },
+      data,
+    });
+  },
+
+  deleteBlog: async (id) => {
+    return await prisma.blog.delete({ where: { id: Number(id) } });
+  },
+};

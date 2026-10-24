@@ -1,0 +1,13 @@
+.DS_Store
+*.log
+node_modules/
+.env
+.env.local
+*.pem
+dist/
+build/
+.next/
+
+# Uploaded images kept on disk by the local dev fallback in r2.service.js
+Server/uploads/
+uploads/

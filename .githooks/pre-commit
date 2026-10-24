@@ -1,0 +1,26 @@
+#!/bin/sh
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+if git diff --cached --name-only | grep -E "^\.env$|^.*\/\.env$|^\.env\." | grep -v "\.example$" > /dev/null 2>&1; then
+  echo "${RED}❌ Attempting to commit a .env file. Aborting.${NC}"
+  echo "   If this is intentional (e.g. .env.example), run: git commit --no-verify"
+  exit 1
+fi
+
+if git diff --cached | grep -E "(password|secret|token)\s*=\s*['\"][^'\"]{8,}['\"]" | grep -v "process\.env\|your-.*-here\|placeholder\|example\|test_" > /dev/null 2>&1; then
+  echo "${RED}❌ Possible hardcoded secret detected in staged changes. Review before committing.${NC}"
+  exit 1
+fi
+
+if git diff --cached --name-only | grep -E "NEXT_PUBLIC_" > /dev/null 2>&1; then
+  if git diff --cached | grep -E "NEXT_PUBLIC_.*=" | grep -v "API_URL\|ENABLE_" > /dev/null 2>&1; then
+    echo "${RED}❌ Possible secret in NEXT_PUBLIC_ variable.${NC}"
+    exit 1
+  fi
+fi
+
+echo "${GREEN}✅ Pre-commit checks passed${NC}"

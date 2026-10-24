@@ -8,28 +8,137 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(uuid())
-  name          String
-  email         String   @unique
-  reg_no        String
-  year          String
-  domain        String
-  ref_code      String   @unique
-  status        String   @default("pending") // pending | approved | rejected
-  password_hash String?
-  role          String   @default("member")   // member | admin
-  created_at    DateTime @default(now())
-  blogs         Blog[]
+  id                    String      @id @default(uuid())
+  name                  String
+  email                 String      @unique
+  reg_no                String      @unique
+  year                  String
+  domain                String
+  ref_code              String      @unique
+  status                UserStatus  @default(pending)
+  password_hash         String?
+  role                  UserRole    @default(member)
+  is_super_admin        Boolean     @default(false)
+  set_password_token    String?
+  set_password_expires  DateTime?
+  email_verified        Boolean     @default(false)
+  verification_token    String?
+  failed_login_attempts Int         @default(0)
+  lock_until            DateTime?
+  created_at            DateTime    @default(now())
+  updated_at            DateTime    @updatedAt
+  blogs                 Blog[]
+  comments              Comment[]
+  likes                 Like[]
+  refresh_tokens        RefreshToken[]
+  audit_logs            AuditLog[]
+
+  @@index([email])
+  @@index([ref_code])
+  @@index([status])
+  @@index([role])
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid())
+  token_hash String
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  expires_at DateTime
+  created_at DateTime @default(now())
+  revoked    Boolean  @default(false)
+
+  @@index([token_hash])
+  @@index([user_id])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  user_id   String?
+  user      User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  action    String
+  entity    String?
+  entity_id String?
+  metadata  Json?
+  ip        String?
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+  @@index([action])
+  @@index([created_at])
 }
 
 model Blog {
-  id          String   @id @default(uuid())
-  title       String
-  content     String
-  links       String?
-  status      String   @default("draft") // draft | pending_review | published | rejected
-  author_id   String
-  author      User     @relation(fields: [author_id], references: [id])
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id               String     @id @default(uuid())
+  title            String
+  subtitle         String?
+  content          String
+  image            String?
+  links            String?
+  status           BlogStatus @default(draft)
+  rejection_reason String?
+  author_id        String
+  created_at       DateTime   @default(now())
+  updated_at       DateTime   @updatedAt
+  author           User       @relation(fields: [author_id], references: [id])
+  comments         Comment[]
+  likes            Like[]
+
+  @@index([author_id])
+  @@index([status])
+  // The public feed reads published posts, newest first, a page at a time.
+  // Neither single-column index can serve that in one pass; this can.
+  @@index([status, created_at])
+}
+
+model Like {
+  id         String   @id @default(uuid())
+  blog_id    String
+  user_id    String
+  created_at DateTime @default(now())
+  blog       Blog     @relation(fields: [blog_id], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([blog_id, user_id])
+  @@index([blog_id])
+  @@index([user_id])
+}
+
+model Comment {
+  id         String    @id @default(uuid())
+  content    String
+  blog_id    String
+  user_id    String
+  parent_id  String?
+  created_at DateTime  @default(now())
+  
+  blog       Blog      @relation(fields: [blog_id], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  
+  parent     Comment?  @relation("CommentToComment", fields: [parent_id], references: [id], onDelete: Cascade)
+  replies    Comment[] @relation("CommentToComment")
+
+  @@index([blog_id])
+  @@index([user_id])
+  @@index([parent_id])
+}
+
+enum UserStatus {
+  pending
+  approved
+  rejected
+}
+
+enum UserRole {
+  member
+  admin
+  reviewer
+}
+
+enum BlogStatus {
+  draft
+  pending_review
+  approved
+  published
+  rejected
 }

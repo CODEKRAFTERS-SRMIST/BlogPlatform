@@ -1,0 +1,30 @@
+# Docker does not read .gitignore.
+#
+# The build stage here does `COPY . .`, which pulled .env.local - and the
+# stray .env.local.bak beside it - into the builder. The runner stage only
+# copies .next/standalone, .next/static and public, so they did not reach the
+# published image, but a secret in any layer of any stage is a secret that
+# has left the machine.
+#
+# The build gets its configuration from the ARGs the Dockerfile declares
+# (NEXT_PUBLIC_API_URL, API_PROXY_URL), not from a file copied in, so nothing
+# here is needed to build.
+
+# Secrets, and the backup copies people leave next to them.
+.env
+.env.*
+
+# Installed by `npm ci` in the deps stage.
+node_modules
+npm-debug.log*
+
+# Built fresh inside the image.
+.next
+out
+
+.git
+.gitignore
+*.log
+
+Dockerfile
+.dockerignore
