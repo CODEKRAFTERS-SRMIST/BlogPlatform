@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { AxiosError } from 'axios';
+import { handleApiError } from '@/lib/api';
 
 interface UseApiState<T> {
   data: T | null;
@@ -32,9 +32,7 @@ export function useApi<T>(
       const result = await apiFunction();
       setState({ data: result, loading: false, error: null });
     } catch (err) {
-      const errorMessage = err instanceof AxiosError 
-        ? err.response?.data?.message || err.message 
-        : 'An error occurred';
+      const errorMessage = handleApiError(err);
       setState({ data: null, loading: false, error: errorMessage });
     }
   }, dependencies);
@@ -75,9 +73,7 @@ export function useMutation<T, D>(
       setState({ data: result, loading: false, error: null });
       return result;
     } catch (err) {
-      const errorMessage = err instanceof AxiosError 
-        ? err.response?.data?.message || err.message 
-        : 'An error occurred';
+      const errorMessage = handleApiError(err);
       setState({ data: null, loading: false, error: errorMessage });
       throw err;
     }

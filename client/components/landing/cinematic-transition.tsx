@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useEffect } from "react";
 import {
   motion,
   useScroll,
@@ -98,7 +98,6 @@ const FLOATING_ELEMENTS = [
 
 export function CinematicTransition() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isMounted, setIsMounted] = useState(false);
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
   const smoothMouseX = useSpring(mouseX, { damping: 30, stiffness: 70 });
@@ -111,63 +110,58 @@ export function CinematicTransition() {
     offset: ["start start", "end end"],
   });
 
+  // Barely a spring: just enough to take the jitter out of a trackpad, not
+  // enough to lag behind the scrollbar. Anything softer and a quick flick
+  // leaves this value trailing somewhere in the middle of the section while
+  // the screen shows nothing, which is what made fast scrolling feel broken.
   const smoothProgress = useSpring(scrollYProgress, {
-    stiffness: 25,
-    damping: 25,
-    restDelta: 0.002,
+    stiffness: 400,
+    damping: 40,
+    restDelta: 0.0005,
   });
 
   const opacity = useTransform(
     smoothProgress,
-    [0.05, 0.15, 0.2, 0.25],
+    [0.0, 0.08, 0.16, 0.24],
     [0, 1, 1, 0],
   );
-  const scale = useTransform(smoothProgress, [0.05, 0.15, 0.25], [0.5, 1, 0.5]);
-  const rotate = useTransform(smoothProgress, [0.05, 0.25], [0, -20]);
-  const y = useTransform(smoothProgress, [0.05, 0.15], [40, 0]);
+  const scale = useTransform(smoothProgress, [0.0, 0.08, 0.24], [0.6, 1, 0.55]);
+  const rotate = useTransform(smoothProgress, [0.0, 0.24], [0, -16]);
+  const y = useTransform(smoothProgress, [0.0, 0.08], [30, 0]);
   const filter = useTransform(
     smoothProgress,
-    [0.05, 0.12, 0.2, 0.25],
-    ["blur(8px)", "blur(0px)", "blur(0px)", "blur(15px)"],
+    [0.0, 0.07, 0.18, 0.24],
+    ["blur(6px)", "blur(0px)", "blur(0px)", "blur(12px)"],
   );
 
   useEffect(() => {
-    setIsMounted(true);
     const handleMouseMove = (e: MouseEvent) => {
       mouseX.set(e.clientX - window.innerWidth / 2);
       mouseY.set(e.clientY - window.innerHeight / 2);
     };
-    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, [mouseX, mouseY]);
 
-  if (!isMounted) {
-    return (
-      <section
-        className="relative h-[1200vh] bg-[#FEF0D8]"
-        ref={containerRef}
-      />
-    );
-  }
-
+  /*
+   * 300vh, down from 400.
+   *
+   * The choreography below is written in fractions of this section's own
+   * scroll progress, so shortening it changes nothing about the order or the
+   * overlap - there is just less empty travel between the beats. At 400vh the
+   * last line landed and then you scrolled most of a screen with nothing
+   * happening, which is what made the page feel like it had stalled.
+   */
   return (
-    <section ref={containerRef} className="relative h-[1200vh] bg-[#FEF0D8]">
+    <section ref={containerRef} className="relative h-[300vh] bg-[#FEF0D8]">
       {/* Watermark */}
       <motion.div
         style={{ x: watermarkX, y: watermarkY }}
         className="pointer-events-none fixed inset-0 z-0 flex select-none items-center justify-center opacity-[0.02]"
       >
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{
-            duration: 180,
-            repeat: Number.POSITIVE_INFINITY,
-            ease: "linear",
-          }}
-          className="text-[40vw] font-black leading-none tracking-tighter text-[#0B1220]"
-        >
+        <div className="text-[40vw] font-black leading-none tracking-tighter text-[#0B1220]">
           BLOG
-        </motion.div>
+        </div>
       </motion.div>
 
       <div className="sticky top-0 h-screen w-full flex flex-col items-center justify-center overflow-hidden">
@@ -176,14 +170,14 @@ export function CinematicTransition() {
             <TextLine
               text="A growing library of"
               progress={smoothProgress}
-              range={[0.4, 0.55]}
+              range={[0.24, 0.44]}
               speed={1.4}
             />
             <div className="flex flex-wrap items-baseline justify-center gap-1 md:gap-2">
               <TextLine
                 text="Member"
                 progress={smoothProgress}
-                range={[0.55, 0.68]}
+                range={[0.44, 0.62]}
                 speed={1}
                 isAnchor
                 isYellow
@@ -191,7 +185,7 @@ export function CinematicTransition() {
               <TextLine
                 text="-written blogs"
                 progress={smoothProgress}
-                range={[0.55, 0.68]}
+                range={[0.44, 0.62]}
                 speed={1}
                 isAnchor
               />
@@ -199,7 +193,7 @@ export function CinematicTransition() {
             <TextLine
               text="published with intent"
               progress={smoothProgress}
-              range={[0.68, 0.81]}
+              range={[0.62, 0.82]}
               speed={0.6}
             />
           </div>

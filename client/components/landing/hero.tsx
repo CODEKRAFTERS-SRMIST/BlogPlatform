@@ -22,7 +22,7 @@ const heroItems = [
 
 function SkidDust({ delay }: { delay: number }) {
   return (
-    <div className="absolute bottom-2 left-0 h-1.5 w-full lg:bottom-4">
+    <div className="pointer-events-none absolute bottom-2 left-0 h-1.5 w-full lg:bottom-4">
       {[...Array(6)].map((_, i) => (
         <motion.div
           key={i}
@@ -118,7 +118,6 @@ function UnscrambleText({ word }: { word: string }) {
 }
 
 export function Hero() {
-  const [isMounted, setIsMounted] = useState(false);
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
 
@@ -136,68 +135,62 @@ export function Hero() {
   const logoX = useTransform(smoothX, [-500, 500], [20, -20]);
   const logoY = useTransform(smoothY, [-500, 500], [20, -20]);
 
-  const paperBackground = useTransform(
-    smoothX,
-    [-500, 500],
-    [
-      "radial-gradient(circle at 0% 0%, rgba(242,178,0,0.1) 0%, transparent 50%)",
-      "radial-gradient(circle at 100% 0%, rgba(242,178,0,0.1) 0%, transparent 50%)",
-    ],
-  );
+  // The highlight is a fixed gradient that slides, rather than a gradient
+  // rebuilt from a string on every frame. Same travel, no repaint.
+  const paperGlowX = useTransform(smoothX, [-500, 500], ["-25%", "25%"]);
 
+  /*
+   * The parallax needs a mouse, so it can only start once this is in a
+   * browser - but the hero itself does not. It used to render `null` until a
+   * mount flag flipped, which threw away the server-rendered first paint and
+   * left the page blank until hydration finished. The motion values simply
+   * sit at 0 (dead centre) until the first mousemove arrives.
+   */
   useEffect(() => {
-    setIsMounted(true);
     const handleMouseMove = (e: MouseEvent) => {
       mouseX.set(e.clientX - window.innerWidth / 2);
       mouseY.set(e.clientY - window.innerHeight / 2);
     };
-    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, [mouseX, mouseY]);
-
-  if (!isMounted) return null;
 
   return (
     <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#FEF0D8] px-6 pt-32 pb-20 lg:flex-row lg:px-20 lg:pt-0">
       {/* Dynamic Watermark */}
+      {/* It used to turn a full circle every 150 seconds. A 45vw block of
+          text is the largest layer on the page, and rotating it never
+          finished compositing - the phone was redrawing the hero for as long
+          as the tab was open, for a movement nobody can perceive at 3 per
+          cent opacity. It still drifts with the cursor, which is free. */}
       <motion.div
         style={{ x: watermarkX, y: watermarkY }}
         className="pointer-events-none absolute inset-0 z-0 flex select-none items-center justify-center opacity-[0.03]"
       >
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{
-            duration: 150,
-            repeat: Number.POSITIVE_INFINITY,
-            ease: "linear",
-          }}
-          className="text-[45vw] font-black leading-none tracking-tighter text-[#0B1220]"
-        >
+        <div className="-rotate-6 text-[45vw] font-black leading-none tracking-tighter text-[#0B1220]">
           BLOG SITE
-        </motion.div>
+        </div>
       </motion.div>
 
       {/* Left Side: Hero Words */}
       <div className="relative z-20 flex flex-1 flex-col items-start justify-center text-left lg:items-center">
         <div className="flex flex-col items-start lg:items-center">
+          {/* These three words are 20vw each - the heaviest text on the page.
+              They used to drift up and down forever, which kept all three
+              repainting for the whole visit; the slide-in is the part you
+              actually notice, and it now finishes in under half a second
+              instead of arriving word by word over 2.1s. */}
           {heroItems.map((item, idx) => (
-            <motion.div
+            <div
               key={idx}
               className="relative mb-4 flex flex-col items-start lg:mb-6 lg:items-center"
-              animate={{ y: [0, -4, 0], opacity: [1, 0.95, 1] }}
-              transition={{
-                duration: 3 + idx * 0.5,
-                repeat: Number.POSITIVE_INFINITY,
-                ease: "easeInOut",
-                delay: idx * 0.3,
-              }}
             >
               <motion.h1
                 initial={{ x: "-120vw", filter: "blur(20px)" }}
                 animate={{ x: 0, filter: "blur(0px)" }}
                 transition={{
-                  duration: 0.9,
-                  delay: idx * 0.4,
+                  duration: 0.6,
+                  delay: idx * 0.1,
                   ease: [0.22, 1, 0.36, 1],
                 }}
                 className={`
@@ -207,9 +200,9 @@ export function Hero() {
                 `}
               >
                 {item.tilted ? <UnscrambleText word={item.word} /> : item.word}
-                <SkidDust delay={idx * 0.4} />
+                <SkidDust delay={idx * 0.1} />
               </motion.h1>
-            </motion.div>
+            </div>
           ))}
         </div>
       </div>
@@ -224,7 +217,7 @@ export function Hero() {
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1, delay: 2.2 }}
+            transition={{ duration: 0.6, delay: 0.3 }}
             className="flex flex-col items-center rotate-[-12deg]"
           >
             <div className="relative flex h-40 w-40 items-center justify-center lg:h-80 lg:w-80">
@@ -243,7 +236,7 @@ export function Hero() {
         <motion.div
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: [0, 4], opacity: [0.5, 0] }}
-          transition={{ delay: 2.3, duration: 1, ease: "easeOut" }}
+          transition={{ delay: 0.85, duration: 0.8, ease: "easeOut" }}
           className="absolute h-40 w-40 rounded-full border-4 border-[#F2B200]/30"
         />
 
@@ -257,27 +250,31 @@ export function Hero() {
             filter: "blur(10px)",
           }}
           animate={{ y: 0, rotate: -8, scale: 1, filter: "blur(0px)" }}
+          /*
+           * The card used to hang above the fold for 2.2 seconds before it
+           * dropped, and the whole hero was not finished assembling until
+           * 4.2s - most of a visit, on the first screen. The drop is the same
+           * move, it just starts straight away.
+           */
           transition={{
             y: {
-              duration: 1.2,
-              delay: 2.2,
-              ease: [0.23, 1, 0.32, 1],
+              delay: 0.3,
               type: "spring",
-              damping: 12,
-              stiffness: 70,
+              damping: 14,
+              stiffness: 110,
             },
-            rotate: { duration: 1.5, delay: 2.2 },
-            scale: { duration: 0.8, delay: 2.2 },
-            filter: { duration: 1.2, delay: 2.2 },
+            rotate: { duration: 0.8, delay: 0.3 },
+            scale: { duration: 0.5, delay: 0.3 },
+            filter: { duration: 0.6, delay: 0.3 },
           }}
           className="relative z-30 w-[280px] overflow-hidden rounded-[2px] bg-white p-5 shadow-[30px_30px_80px_-15px_rgba(11,18,32,0.2)] sm:w-[340px] lg:w-[360px] lg:p-7"
         >
-          <motion.div
-            style={{
-              background: paperBackground,
-            }}
-            className="absolute inset-0 z-40 pointer-events-none"
-          />
+          <div className="absolute inset-0 z-40 overflow-hidden pointer-events-none">
+            <motion.div
+              style={{ x: paperGlowX }}
+              className="absolute -inset-x-1/4 inset-y-0 bg-[radial-gradient(circle_at_50%_0%,rgba(242,178,0,0.1)_0%,transparent_50%)]"
+            />
+          </div>
 
           <div className="mb-4 flex flex-wrap gap-2 lg:mb-6">
             {["EDITORIAL", "FUTURE"].map((tag) => (
@@ -294,16 +291,15 @@ export function Hero() {
             The Art of Building Simple.
           </h2>
 
+          {/* The shimmer that used to sit over this image pulsed forever, on
+              top of a blend mode - every frame of it recomposited the card. */}
           <div className="relative mb-4 aspect-video w-full overflow-hidden bg-[#FEF0D8] lg:mb-6">
-            <motion.div
-              animate={{ opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
-              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
-            />
             <Image
               src="/abstract-editorial-graphic.jpg"
               alt="Editorial Art"
               fill
+              sizes="(min-width: 1024px) 360px, (min-width: 640px) 340px, 280px"
+              priority
               className="object-cover mix-blend-multiply opacity-80"
             />
           </div>
@@ -312,7 +308,7 @@ export function Hero() {
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
-              transition={{ delay: 3.2, type: "spring" }}
+              transition={{ delay: 0.95, type: "spring" }}
               className="h-10 w-10 rounded-full bg-[#F2B200]"
             />
             <div className="flex flex-col gap-1">
@@ -323,9 +319,13 @@ export function Hero() {
         </motion.div>
       </div>
 
-      {/* Grainy Texture Overlay */}
+      {/* Grainy Texture Overlay.
+          Hidden on phones: it is a full-screen layer with a blend mode, and
+          the bar at the top of the page composites over it on every scroll
+          frame. At 4 per cent opacity nobody is missing it on a 390px
+          screen, and the scroll stops fighting for the GPU. */}
       <div
-        className="pointer-events-none absolute inset-0 z-50 opacity-[0.04] mix-blend-multiply"
+        className="pointer-events-none absolute inset-0 z-50 hidden opacity-[0.04] mix-blend-multiply sm:block"
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
         }}

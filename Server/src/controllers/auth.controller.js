@@ -4,14 +4,68 @@ import { AppError } from "../utils/AppError.js";
 import { logAuditEvent, AuditActions } from "../services/audit.service.js";
 
 
+/**
+ * Signup rules. Keep these in sync with client/lib/validators.ts.
+ * They are enforced here too so they cannot be skipped by calling the API
+ * directly instead of using the signup form.
+ */
+const ALLOWED_EMAIL_DOMAIN = 'gmail.com';
+const REG_NO_PREFIX = 'RA';
+const DOMAIN_OPTIONS = [
+  'Development',
+  'Web3',
+  'Cybersecurity',
+  'PR and Management',
+  'Content',
+  'Creative',
+];
+
 export const register = asyncHandler(async (req, res) => {
-  const { name, email, reg_no, year, domain, password } = req.body;
+  const { name, year, domain, password } = req.body;
+  const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : req.body.email;
+  const reg_no = typeof req.body.reg_no === 'string' ? req.body.reg_no.trim().toUpperCase() : req.body.reg_no;
 
   if (!name || !email || !reg_no || !year || !domain) {
     throw new AppError('Missing required fields: name, email, reg_no, year, domain', 400, 'VALIDATION_ERROR');
   }
 
-  const result = await authService.register({ name, email, reg_no, year, domain, password });
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    throw new AppError('Invalid email format', 400, 'INVALID_EMAIL_FORMAT');
+  }
+
+  if (email.split('@')[1] !== ALLOWED_EMAIL_DOMAIN) {
+    throw new AppError(
+      `Only @${ALLOWED_EMAIL_DOMAIN} addresses are allowed. Please change your email.`,
+      400,
+      'INVALID_EMAIL_DOMAIN'
+    );
+  }
+
+  if (!reg_no.startsWith(REG_NO_PREFIX)) {
+    throw new AppError(
+      `Registration number must start with ${REG_NO_PREFIX}.`,
+      400,
+      'INVALID_REG_NO'
+    );
+  }
+
+  if (!DOMAIN_OPTIONS.includes(String(domain).trim())) {
+    throw new AppError(
+      `Please select a department from the list: ${DOMAIN_OPTIONS.join(', ')}.`,
+      400,
+      'INVALID_DOMAIN'
+    );
+  }
+
+  const result = await authService.register({
+    name,
+    email,
+    reg_no,
+    year,
+    domain: String(domain).trim(),
+    password,
+  });
 
   res.status(201).json({
     success: true,
@@ -102,6 +156,9 @@ export const login = asyncHandler(async (req, res) => {
     path: '/api/auth',
   });
 
+  // The access token is deliberately NOT in the body: it is already set as an
+  // httpOnly cookie above. Returning it as well would expose it to any script
+  // on the page, which is exactly what httpOnly exists to prevent.
   res.json({
     success: true,
     data: {

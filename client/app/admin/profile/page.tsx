@@ -19,6 +19,8 @@ import {
   Clock,
   Globe,
   XCircle,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { authApi, adminApi, handleApiError, User as UserType } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
@@ -38,6 +40,9 @@ export default function AdminProfile() {
     newPassword: "",
     confirmPassword: "",
   });
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
 
@@ -47,7 +52,7 @@ export default function AdminProfile() {
         router.push("/login");
         return;
       }
-      if (user?.role !== "admin") {
+      if (user?.role !== "admin" && !user?.is_super_admin) {
         router.push("/platform");
         return;
       }
@@ -117,9 +122,11 @@ export default function AdminProfile() {
         }}
         onLogout={logout}
         isLoggedIn={isLoggedIn}
+        userRole={user?.role}
+        isSuperAdmin={user?.is_super_admin}
       />
 
-      <main className="relative z-10 min-h-screen w-full flex flex-col items-center pt-20 md:pt-12 pb-24 md:pb-12 px-4 md:px-8 lg:pl-32 transition-all duration-300">
+      <main className="pb-mobile-nav relative z-10 min-h-screen w-full min-w-0 flex flex-col items-center pt-16 sm:pt-20 md:pt-12 px-3 sm:px-5 md:px-8 lg:pl-32 transition-all duration-300">
         <div className="w-full max-w-7xl flex flex-col gap-8">
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -162,7 +169,7 @@ export default function AdminProfile() {
               animate={{ opacity: 1, x: 0 }}
               className="lg:col-span-1 flex flex-col gap-8"
             >
-              <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[3rem] p-10 shadow-xl overflow-hidden relative">
+              <div className="bg-white/90 border border-white/80 rounded-[3rem] p-10 shadow-xl overflow-hidden relative">
                 <div className="relative z-10">
                   <div className="w-24 h-24 bg-indigo-600 rounded-3xl flex items-center justify-center font-black text-white text-3xl mb-8 shadow-2xl">
                     {user?.name.charAt(0)}
@@ -178,7 +185,7 @@ export default function AdminProfile() {
                         Access Level
                       </span>
                       <span className="text-lg font-black text-indigo-600 uppercase tracking-tight">
-                        Super Administrator
+                        {user?.is_super_admin ? "Super Administrator" : "Administrator"}
                       </span>
                     </div>
                     <div className="flex flex-col gap-1">
@@ -186,7 +193,9 @@ export default function AdminProfile() {
                         Club Domain
                       </span>
                       <span className="text-lg font-black text-gray-800 uppercase tracking-tight">
-                        Executive Council
+                        {user?.is_super_admin
+                          ? "Executive Council"
+                          : "Club Administration"}
                       </span>
                     </div>
                   </div>
@@ -241,7 +250,7 @@ export default function AdminProfile() {
               className="lg:col-span-2 space-y-8"
             >
               {/* Change Password Card */}
-              <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[3rem] p-10 shadow-xl">
+              <div className="bg-white/90 border border-white/80 rounded-[3rem] p-10 shadow-xl">
                 <div className="flex items-center gap-4 mb-10">
                   <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400">
                     <Key size={24} />
@@ -266,24 +275,34 @@ export default function AdminProfile() {
                   </motion.div>
                 )}
 
-                <form onSubmit={handleChangePassword} className="space-y-6">
+                <form method="post" onSubmit={handleChangePassword} className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="flex flex-col gap-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-2">
                         Current Secret
                       </label>
-                      <input
-                        type="password"
-                        placeholder="••••••••"
-                        value={passwordData.currentPassword}
-                        onChange={(e) =>
-                          setPasswordData({
-                            ...passwordData,
-                            currentPassword: e.target.value,
-                          })
-                        }
-                        className="bg-white/80 border border-gray-100 rounded-2xl p-5 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all font-medium"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showCurrentPassword ? "text" : "password"}
+                          placeholder="••••••••"
+                          value={passwordData.currentPassword}
+                          onChange={(e) =>
+                            setPasswordData({
+                              ...passwordData,
+                              currentPassword: e.target.value,
+                            })
+                          }
+                          className="w-full bg-white/80 border border-gray-100 rounded-2xl p-5 pr-14 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all font-medium"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                          className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                          title={showCurrentPassword ? "Hide secret" : "Show secret"}
+                        >
+                          {showCurrentPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                      </div>
                     </div>
                     <div className="hidden md:block" />
 
@@ -291,35 +310,55 @@ export default function AdminProfile() {
                       <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-2">
                         New Secret
                       </label>
-                      <input
-                        type="password"
-                        placeholder="••••••••"
-                        value={passwordData.newPassword}
-                        onChange={(e) =>
-                          setPasswordData({
-                            ...passwordData,
-                            newPassword: e.target.value,
-                          })
-                        }
-                        className="bg-white/80 border border-gray-100 rounded-2xl p-5 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all font-medium"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showNewPassword ? "text" : "password"}
+                          placeholder="••••••••"
+                          value={passwordData.newPassword}
+                          onChange={(e) =>
+                            setPasswordData({
+                              ...passwordData,
+                              newPassword: e.target.value,
+                            })
+                          }
+                          className="w-full bg-white/80 border border-gray-100 rounded-2xl p-5 pr-14 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all font-medium"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                          title={showNewPassword ? "Hide secret" : "Show secret"}
+                        >
+                          {showNewPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                      </div>
                     </div>
                     <div className="flex flex-col gap-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-2">
                         Confirm New Secret
                       </label>
-                      <input
-                        type="password"
-                        placeholder="••••••••"
-                        value={passwordData.confirmPassword}
-                        onChange={(e) =>
-                          setPasswordData({
-                            ...passwordData,
-                            confirmPassword: e.target.value,
-                          })
-                        }
-                        className="bg-white/80 border border-gray-100 rounded-2xl p-5 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all font-medium"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword ? "text" : "password"}
+                          placeholder="••••••••"
+                          value={passwordData.confirmPassword}
+                          onChange={(e) =>
+                            setPasswordData({
+                              ...passwordData,
+                              confirmPassword: e.target.value,
+                            })
+                          }
+                          className="w-full bg-white/80 border border-gray-100 rounded-2xl p-5 pr-14 focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-all font-medium"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                          title={showConfirmPassword ? "Hide secret" : "Show secret"}
+                        >
+                          {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -333,7 +372,7 @@ export default function AdminProfile() {
               </div>
 
               {/* Quick Navigation Card */}
-              <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[3rem] p-10 shadow-xl">
+              <div className="bg-white/90 border border-white/80 rounded-[3rem] p-10 shadow-xl">
                 <h3 className="text-sm font-black uppercase tracking-[0.2em] text-gray-400 mb-8">
                   Access Points
                 </h3>

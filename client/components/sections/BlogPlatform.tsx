@@ -16,7 +16,7 @@ const BlogDetailModal = dynamic(() => import("../BlogDetailModal"), { ssr: false
 const CreateBlogSection = dynamic(() => import("./CreateBlogSection"), { ssr: false });
 const AuthModal = dynamic(() => import("../AuthModal").then(mod => ({ default: mod.AuthModal })), { ssr: false });
 import { useApi, useMutation } from "@/lib/hooks";
-import { blogApi, interactionApi, uploadImage, handleApiError } from "@/lib/api";
+import { blogApi, interactionApi, uploadImage, handleApiError, Pagination } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import { useAutoLogin } from "@/lib/useAutoLogin";
 
@@ -24,6 +24,8 @@ export default function BlogPlatform() {
   const [activeSection, setActiveSection] = useState<Section>("dashboard");
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [posts, setPosts] = useState<Post[]>([]);
+  const [pagination, setPagination] = useState<Pagination | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -64,7 +66,7 @@ export default function BlogPlatform() {
     refetch,
   } = useApi(async () => {
     try {
-      return await blogApi.getAllPosts();
+      return await blogApi.getPostsPage(1);
     } catch (err: any) {
       if (err.response?.status === 401) {
         setShowAuthModal(true);
@@ -120,22 +122,22 @@ export default function BlogPlatform() {
   useEffect(() => {
     if (
       fetchedPosts &&
-      Array.isArray(fetchedPosts) &&
-      fetchedPosts.length > 0
+      Array.isArray(fetchedPosts.posts) &&
+      fetchedPosts.posts.length > 0
     ) {
       // Initialize liked posts state from backend userLiked property
       const likedIds = new Set<string>();
-      fetchedPosts.forEach((p: any) => {
+      fetchedPosts.posts.forEach((p: any) => {
         if (p.userLiked) {
           likedIds.add(p.id);
         }
       });
       setLikedPosts(likedIds);
 
-      const mappedPosts = fetchedPosts.map((p: any) => ({
+      const mappedPosts = fetchedPosts.posts.map((p: any) => ({
         id: p.id,
         title: p.title,
-        subtitle: p.excerpt || "",
+        subtitle: p.subtitle || p.excerpt || "",
         content: p.content || "",
         coverImage:
           p.image ||
@@ -152,6 +154,7 @@ export default function BlogPlatform() {
         views: p.viewCount || 0,
       }));
       setPosts(mappedPosts);
+      setPagination(fetchedPosts.pagination);
       setLoading(false);
       setError(null);
     } else if (fetchedPosts !== null && !postsLoading) {
@@ -200,7 +203,7 @@ export default function BlogPlatform() {
   const mapBackendToPost = (p: any): Post => ({
     id: p.id,
     title: p.title,
-    subtitle: p.excerpt || p.subtitle || "", // Vino Backend might not have excerpt yet
+    subtitle: p.subtitle || p.excerpt || "",
     content: p.content || "",
     coverImage:
       p.image ||
@@ -218,6 +221,10 @@ export default function BlogPlatform() {
         ? p.tags.map((t: any) => t.tag?.name || t.name)
         : [],
     status: p.status || "published",
+    // Only /blogs/my returns this, and only for the author's own rejected
+    // stories - the public feed never carries it. Without it the author saw
+    // a bare "rejected" badge and had no way to learn what to change.
+    rejectionReason: p.rejection_reason || p.rejectionReason || undefined,
     likes: p._count?.likes || 0,
     comments: p._count?.comments || 0,
     views: p.viewCount || 0,
@@ -230,14 +237,71 @@ export default function BlogPlatform() {
   const totalComments = myPosts.reduce((acc, post) => acc + post.comments, 0);
   const totalViews = myPosts.reduce((acc, post) => acc + post.views, 0);
 
+  /** Appends the next page of blogs to the feed. */
+  const handleLoadMore = async () => {
+    if (!pagination?.hasMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const { posts: fetched, pagination: info } = await blogApi.getPostsPage(
+        pagination.page + 1,
+      );
+      setLikedPosts((prev) => {
+        const next = new Set(prev);
+        fetched.forEach((p: any) => {
+          if (p.userLiked) next.add(p.id);
+        });
+        return next;
+      });
+      const mapped = fetched.map((p: any) => ({
+        id: p.id,
+        title: p.title,
+        subtitle: p.subtitle || p.excerpt || "",
+        content: p.content || "",
+        coverImage:
+          p.image ||
+          p.coverImage ||
+          "https://images.unsplash.com/photo-1499750789039-ca2a2f92c815?w=800&h=400&fit=crop",
+        author: p.author?.name || "Unknown",
+        date: p.publishedAt
+          ? new Date(p.publishedAt).toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0],
+        tags: p.tags?.map((t: any) => t.tag?.name || t.name) || [],
+        status: p.status || "published",
+        likes: p._count?.likes || 0,
+        comments: p._count?.comments || 0,
+        views: p.viewCount || 0,
+      })) as Post[];
+      setPosts((prev) => {
+        const seen = new Set(prev.map((x) => x.id));
+        return [...prev, ...mapped.filter((x) => !seen.has(x.id))];
+      });
+      setPagination(info);
+    } catch (err) {
+      toast.error(handleApiError(err));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
+
+    // Compressing a phone photo and sending it takes a few seconds, which
+    // looked like nothing happening at all.
+    const toastId = toast.loading("Uploading cover image...");
     try {
       const url = await uploadImage(file);
-      if (url) setNewPost({ ...newPost, coverImage: url });
+      if (!url) throw new Error("The server did not return an image URL");
+      setNewPost({ ...newPost, coverImage: url });
+      toast.success("Cover image uploaded", { id: toastId });
     } catch (err) {
-      toast.error("Failed to upload image");
+      toast.error(handleApiError(err), { id: toastId });
+    } finally {
+      // Clearing the input lets the same file be picked again after a failure;
+      // without this, re-choosing it fires no change event at all.
+      input.value = "";
     }
   };
 
@@ -278,6 +342,7 @@ export default function BlogPlatform() {
         title: newPost.title,
         slug: slug,
         content: newPost.content,
+        subtitle: newPost.subtitle,
         excerpt: newPost.subtitle,
         coverImage:
           newPost.coverImage ||
@@ -335,9 +400,10 @@ export default function BlogPlatform() {
 
   const handleDeletePost = async (id: string) => {
     const postToDelete = myPosts.find((p) => p.id === id);
-    if (postToDelete?.status === "published" && user?.role !== "admin") {
-      alert(
-        "Cannot delete a published blog. Please contact an admin if you need to remove it.",
+    const canRemovePublished = user?.role === "admin" || Boolean(user?.is_super_admin);
+    if (postToDelete?.status === "published" && !canRemovePublished) {
+      toast.error(
+        "Published stories cannot be deleted. Ask an admin to remove it.",
       );
       return;
     }
@@ -352,9 +418,10 @@ export default function BlogPlatform() {
     try {
       await blogApi.deletePost(id);
       await refetchMyPosts?.();
+      toast.success("Story deleted");
     } catch (err) {
       console.error("Failed to delete post:", err);
-      alert(handleApiError(err));
+      toast.error(handleApiError(err));
     }
   };
 
@@ -406,7 +473,7 @@ export default function BlogPlatform() {
           onLogin={() => setShowAuthModal(true)}
           isLoggedIn={isLoggedIn}
         />
-        <main className="relative z-10 min-h-screen w-full flex flex-col items-center justify-center pt-24 md:pt-12 pb-12 px-4">
+        <main className="pb-mobile-nav relative z-10 min-h-screen w-full min-w-0 flex flex-col items-center justify-center pt-20 sm:pt-24 md:pt-12 px-3 sm:px-4">
           <div className="text-center space-y-4">
             <div className="inline-block">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#f5b800]"></div>
@@ -442,70 +509,91 @@ export default function BlogPlatform() {
         isSuperAdmin={user?.is_super_admin}
       />
 
-      <main className="relative z-10 min-h-screen w-full flex flex-col items-center pt-20 md:pt-12 pb-24 md:pb-12 px-4 md:px-8 lg:pl-32 transition-all duration-300">
-        <AnimatePresence mode="wait">
-          {activeSection === "dashboard" && (
-            <DashboardSection
-              key="dashboard"
-              totalLikes={totalLikes}
-              totalViews={totalViews}
-              myPosts={myPosts}
-              setActiveSection={setActiveSection}
-            />
-          )}
+      <main className="pb-mobile-nav relative z-10 min-h-screen w-full min-w-0 flex flex-col items-center pt-16 sm:pt-20 md:pt-12 px-3 sm:px-5 md:px-8 lg:pl-32 transition-all duration-300">
+        {/*
+         * The sections are swapped with a plain conditional, not inside an
+         * <AnimatePresence mode="wait">.
+         *
+         * `mode="wait"` keeps the section you are leaving mounted until its
+         * exit animation has finished and only then mounts the one you
+         * tapped, so every switch cost an exit pass before anything new
+         * appeared - the delay that made the bottom bar feel unresponsive on
+         * a phone. Plain `sync` mode is not the answer either: both sections
+         * would sit in this flex column at once and shove the page around
+         * while the old one faded. The tab you tap now mounts on the same
+         * tick and plays only its own entrance.
+         */}
+        {activeSection === "dashboard" && (
+          <DashboardSection
+            key="dashboard"
+            totalLikes={totalLikes}
+            totalViews={totalViews}
+            myPosts={myPosts}
+            setActiveSection={setActiveSection}
+          />
+        )}
 
-          {activeSection === "home" && (
-            <HomeSection
-              key="home"
-              posts={posts}
-              likedPosts={likedPosts}
-              handleLike={handleLike}
-              handlePostClick={handlePostClick}
-              setActiveSection={setActiveSection}
-            />
-          )}
+        {activeSection === "home" && (
+          <HomeSection
+            key="home"
+            posts={posts}
+            likedPosts={likedPosts}
+            handleLike={handleLike}
+            handlePostClick={handlePostClick}
+            setActiveSection={setActiveSection}
+            total={pagination?.total}
+            hasMore={pagination?.hasMore}
+            loadingMore={loadingMore}
+            onLoadMore={handleLoadMore}
+          />
+        )}
 
-          {activeSection === "myblogs" && (
-            <MyBlogsSection
-              key="myblogs"
-              myPosts={myPosts}
-              likedPosts={likedPosts}
-              handleLike={handleLike}
-              handlePostClick={handlePostClick}
-              handleDeletePost={handleDeletePost}
-              setActiveSection={setActiveSection}
-            />
-          )}
+        {activeSection === "myblogs" && (
+          <MyBlogsSection
+            key="myblogs"
+            myPosts={myPosts}
+            likedPosts={likedPosts}
+            handleLike={handleLike}
+            handlePostClick={handlePostClick}
+            handleDeletePost={handleDeletePost}
+            setActiveSection={setActiveSection}
+          />
+        )}
 
-          {activeSection === "new" && (
-            <CreateBlogSection
-              key="new"
-              newPost={newPost}
-              setNewPost={setNewPost}
-              handleImageUpload={handleImageUpload}
-              handleCreatePost={handleCreatePost}
-              fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
-            />
-          )}
+        {activeSection === "new" && (
+          <CreateBlogSection
+            key="new"
+            newPost={newPost}
+            setNewPost={setNewPost}
+            handleImageUpload={handleImageUpload}
+            handleCreatePost={handleCreatePost}
+            fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
+          />
+        )}
 
-          {activeSection === "settings" && (
-            <SettingsSection
-              key="settings"
-              showPasswordChange={showPasswordChange}
-              setShowPasswordChange={setShowPasswordChange}
-            />
-          )}
-        </AnimatePresence>
+        {activeSection === "settings" && (
+          <SettingsSection
+            key="settings"
+            showPasswordChange={showPasswordChange}
+            setShowPasswordChange={setShowPasswordChange}
+          />
+        )}
       </main>
 
-      {selectedPost && (
-        <BlogDetailModal
-          selectedPost={selectedPost}
-          setSelectedPost={setSelectedPost}
-          onLike={() => handleLike(selectedPost.id)}
-          isLiked={likedPosts.has(selectedPost.id)}
-        />
-      )}
+      {/* AnimatePresence holds the modal in the tree until its exit finishes,
+          so closing shrinks the post back into the card it came from. Without
+          it React unmounted the node on the same tick and the post vanished. */}
+      <AnimatePresence>
+        {selectedPost && (
+          <BlogDetailModal
+            key={selectedPost.id}
+            selectedPost={selectedPost}
+            setSelectedPost={setSelectedPost}
+            onLike={() => handleLike(selectedPost.id)}
+            isLiked={likedPosts.has(selectedPost.id)}
+          />
+        )}
+      </AnimatePresence>
 
       <AuthModal
         isOpen={showAuthModal}

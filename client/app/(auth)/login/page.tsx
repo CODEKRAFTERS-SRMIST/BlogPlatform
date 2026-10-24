@@ -4,8 +4,10 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mail, Lock, ChevronRight, User, ArrowLeft } from "lucide-react";
-import { authApi, handleApiError } from "@/lib/api";
+import { Mail, Lock, ChevronRight, User, ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
+import { authApi, handleApiError, isPendingApprovalError } from "@/lib/api";
+import { publishAuthUser, useAuth, refreshAuth, User as AuthUser } from "@/lib/useAuth";
+import { resetSignedOutLatch } from "@/lib/api-client";
 import { GridPattern } from "@/components/background";
 
 function LoginForm() {
@@ -15,16 +17,50 @@ function LoginForm() {
     email: "",
     password: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const reason = searchParams.get("reason");
+
+  const { user: activeUser, isLoggedIn, loading: authLoading } = useAuth();
 
   useEffect(() => {
     if (searchParams.get("registered") === "true") {
       setSuccessMessage("Registration successful! Please wait for admin approval before logging in.");
     }
   }, [searchParams]);
+
+  /** Where a signed-in account belongs, given its role and status. */
+  const homeFor = (u: { role?: string; is_super_admin?: boolean; status?: string }) => {
+    if (u.is_super_admin || u.role === "admin") return "/admin/dashboard";
+    if (u.status === "pending") return "/pending";
+    return "/platform";
+  };
+
+  /**
+   * Somebody who is already signed in has no business on the login form, so
+   * send them home.
+   *
+   * This reads the shared session store rather than calling /auth/me itself.
+   * When it had its own copy, this page and the page it redirected to could
+   * disagree about who was signed in, and bounced the user back and forth
+   * between /login and /admin/dashboard - the flicker with the black screen.
+   * One store means one answer.
+   */
+  useEffect(() => {
+    if (authLoading || !isLoggedIn || !activeUser) return;
+    router.replace(homeFor(activeUser));
+  }, [authLoading, isLoggedIn, activeUser, router]);
+
+  // Another tab signing in should move this one too.
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "auth_changed" && e.newValue) refreshAuth();
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -38,26 +74,52 @@ function LoginForm() {
 
     try {
       const response = await authApi.login(formData);
-      const user = response.user;
-
-      if (user.is_super_admin || user.role === "admin") {
-        router.replace("/admin/dashboard");
-      } else if (user.status === "pending") {
-        router.replace("/pending");
-      } else {
-        router.replace("/platform");
+      // Announce the sign-in before navigating, or the next page reads the
+      // stale "nobody is signed in" and bounces straight back here.
+      publishAuthUser(response.user as unknown as AuthUser);
+      // A later 401 is allowed to redirect again now that there is a session.
+      resetSignedOutLatch();
+      // Tells other open tabs to re-check who is signed in. Only a timestamp:
+      // the session itself lives in an httpOnly cookie.
+      try {
+        localStorage.setItem('auth_changed', String(Date.now()));
+      } catch {
+        // private browsing can refuse storage; tab sync is a nicety
       }
+      router.replace(homeFor(response.user));
     } catch (err: any) {
-      const errorMessage = handleApiError(err);
-      if (errorMessage.toLowerCase().includes("not approved")) {
+      if (isPendingApprovalError(err)) {
         router.push("/pending");
       } else {
-        setError(errorMessage || "Login failed. Please try again.");
+        setError(handleApiError(err) || "Login failed. Please try again.");
       }
     } finally {
       setIsLoading(false);
     }
   };
+
+  /*
+   * Nothing is drawn until we know who this is.
+   *
+   * The form used to render straight away while /auth/me was still in
+   * flight, so an admin who landed here with a live session saw the whole
+   * sign-in page - "member login" - for the length of a network round trip
+   * before being sent on to the dashboard. The redirect above was already
+   * correct; it just had nothing covering it.
+   */
+  if (authLoading || (isLoggedIn && activeUser)) {
+    return (
+      <div className="min-h-screen bg-[#f8f7f4] flex items-center justify-center p-4 relative overflow-hidden">
+        <GridPattern />
+        <div className="relative z-10 flex flex-col items-center gap-4">
+          <Loader2 className="h-7 w-7 animate-spin text-[#f5b800]" />
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">
+            Checking your session
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f8f7f4] flex items-center justify-center p-4 relative overflow-hidden">
@@ -135,7 +197,7 @@ function LoginForm() {
             )}
           </AnimatePresence>
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form method="post" onSubmit={handleLogin} className="space-y-5">
             <div className="relative group">
               <div className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#f5b800] transition-colors">
                 <Mail size={20} />
@@ -156,14 +218,22 @@ function LoginForm() {
                 <Lock size={20} />
               </div>
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 name="password"
                 placeholder="Password"
                 value={formData.password}
                 onChange={handleInputChange}
                 required
-                className="w-full bg-white/50 border border-gray-200 text-gray-900 pl-14 pr-6 py-4.5 rounded-[1.5rem] focus:outline-none focus:border-[#f5b800] focus:ring-1 focus:ring-[#f5b800] transition-all placeholder:text-gray-400 font-bold text-base"
+                className="w-full bg-white/50 border border-gray-200 text-gray-900 pl-14 pr-14 py-4.5 rounded-[1.5rem] focus:outline-none focus:border-[#f5b800] focus:ring-1 focus:ring-[#f5b800] transition-all placeholder:text-gray-400 font-bold text-base"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors p-1"
+                title={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
             </div>
 
             <motion.button

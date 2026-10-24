@@ -73,12 +73,14 @@ export async function getMyBlogs(req, res, next) {
 export async function getPublicBlogs(req, res, next) {
   try {
     const userId = req.user?.id;
-    const blogs = await blogsService.getPublishedBlogs(userId);
+    const { page, limit } = req.query;
+    const { blogs, pagination } = await blogsService.getPublishedBlogs(userId, { page, limit });
     res.json({
       success: true,
       data: {
         count: blogs.length,
-        blogs
+        blogs,
+        pagination
       }
     });
   } catch (err) {

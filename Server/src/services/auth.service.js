@@ -18,12 +18,33 @@ export function generatePasswordToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+/** Emails are stored lowercase and trimmed so one address means one account. */
+export function normalizeEmail(email) {
+  return typeof email === 'string' ? email.trim().toLowerCase() : email;
+}
+
+/**
+ * Looks a user up by email, ignoring case.
+ *
+ * New rows are stored lowercase, but rows created before that was enforced may
+ * hold mixed case, so matching case-insensitively keeps those accounts working.
+ */
+export async function findUserByEmail(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  return prisma.user.findFirst({
+    where: { email: { equals: normalized, mode: 'insensitive' } },
+  });
+}
+
 export async function register(payload) {
-  const existingEmail = await prisma.user.findUnique({ where: { email: payload.email } });
-  if (existingEmail) throw new Error('Email already registered');
+  const email = normalizeEmail(payload.email);
+
+  const existingEmail = await findUserByEmail(email);
+  if (existingEmail) throw new AppError('This email is already registered', 409, 'EMAIL_EXISTS');
 
   const existingRegNo = await prisma.user.findUnique({ where: { reg_no: payload.reg_no } });
-  if (existingRegNo) throw new Error('Registration number already registered');
+  if (existingRegNo) throw new AppError('This registration number is already registered', 409, 'REG_NO_EXISTS');
 
   let ref_code;
   for (let i = 0; i < 10; i++) {
@@ -42,7 +63,7 @@ export async function register(payload) {
   const user = await prisma.user.create({
     data: {
       name: payload.name,
-      email: payload.email,
+      email,
       reg_no: payload.reg_no,
       year: payload.year ? String(payload.year) : '1',
       domain: payload.domain,
@@ -64,11 +85,11 @@ export async function setPassword(token, password) {
   });
 
   if (!user) {
-    throw new Error("Invalid or expired token");
+    throw new AppError('Invalid or expired password reset token', 400, 'INVALID_TOKEN');
   }
 
   if (user.status !== "approved") {
-    throw new Error("User account not approved");
+    throw new AppError('Your account has not been approved yet', 403, 'NOT_APPROVED');
   }
 
   const hash = await bcrypt.hash(password, 12);
@@ -89,16 +110,16 @@ export async function setPassword(token, password) {
 
 
 export async function login(email, password) {
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) throw new Error('Invalid credentials');
+  const user = await findUserByEmail(email);
+  if (!user) throw new AppError('Invalid email or password', 401, 'INVALID_CREDENTIALS');
 
   if (user.lock_until && user.lock_until > new Date()) {
     const minutesLeft = Math.ceil((user.lock_until - new Date()) / 60000);
-    throw new Error(`Account locked. Try again in ${minutesLeft} minutes`);
+    throw new AppError(`Account locked. Try again in ${minutesLeft} minutes`, 429, 'ACCOUNT_LOCKED');
   }
 
-  if (user.status !== 'approved') throw new Error('Account not approved. Please wait for admin approval.');
-  if (!user.password_hash) throw new Error('Password not set. Please contact admin.');
+  if (user.status !== 'approved') throw new AppError('Your account is awaiting admin approval', 403, 'PENDING_APPROVAL');
+  if (!user.password_hash) throw new AppError('Password not set for this account. Please contact an admin.', 400, 'NO_PASSWORD');
 
   const ok = await bcrypt.compare(password, user.password_hash);
 
@@ -115,9 +136,9 @@ export async function login(email, password) {
     });
 
     if (lockUntil) {
-      throw new Error('Too many failed attempts. Account locked for 15 minutes');
+      throw new AppError('Too many failed attempts. Account locked for 15 minutes', 429, 'ACCOUNT_LOCKED');
     }
-    throw new Error('Invalid credentials');
+    throw new AppError('Invalid email or password', 401, 'INVALID_CREDENTIALS');
   }
 
   await prisma.user.update({
@@ -202,7 +223,7 @@ export async function getUserById(userId) {
     where: { id: userId },
     select: { id: true, name: true, email: true, reg_no: true, year: true, domain: true, role: true, is_super_admin: true, status: true, created_at: true }
   });
-  if (!user) throw new Error('User not found');
+  if (!user) throw new AppError('User not found', 404, 'NOT_FOUND');
   return user;
 }
 
@@ -212,11 +233,11 @@ export async function verifyEmail(token) {
   });
 
   if (!user) {
-    throw new Error('Invalid verification token');
+    throw new AppError('Invalid or expired verification link', 400, 'INVALID_TOKEN');
   }
 
   if (user.email_verified) {
-    throw new Error('Email already verified');
+    throw new AppError('This email is already verified', 400, 'ALREADY_VERIFIED');
   }
 
   await prisma.user.update({
@@ -231,14 +252,14 @@ export async function verifyEmail(token) {
 }
 
 export async function requestPasswordReset(email) {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await findUserByEmail(email);
 
   if (!user) {
     return { message: 'If an account exists with this email, a reset link has been sent' };
   }
 
   if (user.status !== 'approved') {
-    throw new Error('Account not approved. Please contact admin.');
+    throw new AppError('Your account is awaiting admin approval', 403, 'PENDING_APPROVAL');
   }
 
   const resetToken = crypto.randomBytes(32).toString('hex');
@@ -263,11 +284,11 @@ export async function requestPasswordReset(email) {
 
 export async function changePassword(userId, currentPassword, newPassword) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new Error('User not found');
-  if (!user.password_hash) throw new Error('Password not set for this account');
+  if (!user) throw new AppError('User not found', 404, 'NOT_FOUND');
+  if (!user.password_hash) throw new AppError('Password not set for this account. Please contact an admin.', 400, 'NO_PASSWORD');
 
   const isMatch = await bcrypt.compare(currentPassword, user.password_hash);
-  if (!isMatch) throw new Error('Incorrect current password');
+  if (!isMatch) throw new AppError('Current password is incorrect', 400, 'INVALID_CURRENT_PASSWORD');
 
   const newHash = await bcrypt.hash(newPassword, 12);
   await prisma.user.update({

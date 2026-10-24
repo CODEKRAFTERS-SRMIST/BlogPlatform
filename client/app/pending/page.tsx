@@ -16,7 +16,7 @@ export default function PendingPage() {
         transition={{ type: "spring", stiffness: 260, damping: 20 }}
         className="relative z-10 w-full max-w-2xl"
       >
-        <div className="bg-white/70 backdrop-blur-2xl border border-white/80 shadow-[0_40px_80px_-25px_rgba(0,0,0,0.15)] rounded-[3rem] p-8 md:p-12 overflow-hidden relative">
+        <div className="bg-white/90 border border-white/80 shadow-[0_40px_80px_-25px_rgba(0,0,0,0.15)] rounded-[3rem] p-8 md:p-12 overflow-hidden relative">
           {/* Decorative elements */}
           <div className="absolute -top-24 -right-24 w-64 h-64 bg-[#f5b800]/10 rounded-full blur-[80px]" />
           <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-amber-500/5 rounded-full blur-[80px]" />

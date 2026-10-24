@@ -27,4 +27,4 @@ export interface NewPost {
   tags: string;
 }
 
-export type Section = 'home' | 'dashboard' | 'new' | 'myblogs' | 'settings' | 'admin' | 'admin_pipeline';
+export type Section = 'home' | 'dashboard' | 'new' | 'myblogs' | 'settings' | 'admin' | 'admin_pipeline' | 'admin_members' | 'admin_review';

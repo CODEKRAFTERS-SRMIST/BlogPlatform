@@ -32,7 +32,24 @@ export const getBlogs = asyncHandler(async (req, res) => {
   const where = status ? { status } : undefined;
   const blogs = await prisma.blog.findMany({
     where,
-    include: { author: { select: { name: true, email: true } } },
+    // The reviewer sees the writer's full profile beside the story, so the
+    // card and the detail view do not need a second request per author.
+    include: {
+      author: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          reg_no: true,
+          year: true,
+          domain: true,
+          role: true,
+          is_super_admin: true,
+          status: true,
+          created_at: true,
+        },
+      },
+    },
     orderBy: { created_at: 'desc' }
   });
   res.json({ success: true, data: { count: blogs.length, blogs } });

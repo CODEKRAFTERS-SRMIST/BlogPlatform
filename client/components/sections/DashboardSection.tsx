@@ -55,17 +55,15 @@ export default function DashboardSection({
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.35 }}
+      transition={{ duration: 0.18 }}
       className="w-full max-w-7xl flex flex-col gap-6"
     >
       {/* Hero Section */}
-      <div className="relative overflow-hidden rounded-[2rem] md:rounded-[2.5rem] bg-white/70 backdrop-blur-2xl border border-white/70 shadow-[0_40px_80px_-25px_rgba(0,0,0,0.1)]">
-        <motion.div
-          className="absolute -top-24 -left-24 w-[250px] md:w-[420px] h-[250px] md:h-[420px] rounded-full bg-gradient-to-br from-[#f5b800]/20 to-transparent blur-3xl"
-          animate={{ x: [0, 20, -20, 0], scale: [1, 1.05, 0.95, 1] }}
-          transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-        />
+      <div className="relative overflow-hidden rounded-[2rem] md:rounded-[2.5rem] bg-white/90 border border-white/70 shadow-[0_40px_80px_-25px_rgba(0,0,0,0.1)]">
+        {/* Static on purpose: see the note in globals.css about blurred
+            decoration. An endlessly moving blurred layer keeps the whole card
+            repainting for as long as the page is open. */}
+        <div className="pointer-events-none absolute -top-24 -left-24 w-[250px] md:w-[420px] h-[250px] md:h-[420px] rounded-full bg-gradient-to-br from-[#f5b800]/20 to-transparent blur-3xl" />
 
         <div className="relative z-10 p-4 md:p-8 lg:p-14">
           <div className="flex flex-col lg:flex-row gap-6 lg:gap-16 items-start">
@@ -90,7 +88,11 @@ export default function DashboardSection({
                   hidden: { opacity: 0 },
                   visible: {
                     opacity: 1,
-                    transition: { staggerChildren: 0.1, delayChildren: 0.1 },
+                    // Six words at the old 0.1s step, behind a 0.1s lead-in,
+                    // meant the headline took 0.7s to finish assembling every
+                    // single time this tab was opened. The cascade is still
+                    // visible at 0.035s; it is just over in a fifth of that.
+                    transition: { staggerChildren: 0.035, delayChildren: 0 },
                   },
                 }}
                 className="mt-6 md:mt-8 text-3xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black leading-[0.95] text-[#111827]"
@@ -156,7 +158,7 @@ export default function DashboardSection({
               <motion.div
                 initial={{ y: 18, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.2 }}
+                transition={{ delay: 0.08 }}
                 className="mt-6 md:mt-8 max-w-xl text-base md:text-lg lg:text-xl text-gray-500 font-medium leading-relaxed flex flex-wrap items-center gap-2"
               >
                 <span className="text-black font-bold">
@@ -242,7 +244,7 @@ export default function DashboardSection({
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.2 }}
+                transition={{ delay: 0.08 }}
                 className="bg-white p-6 md:p-8 rounded-[2rem] md:rounded-[2.5rem] shadow-xl border border-gray-100 flex flex-col items-center text-center group hover:border-[#f5b800]/30 transition-colors"
               >
                 <div className="w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-[#f5b800] to-amber-500 rounded-2xl flex items-center justify-center text-white shadow-lg mb-4 group-hover:scale-110 transition-transform duration-300">
@@ -260,7 +262,7 @@ export default function DashboardSection({
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 }}
+                  transition={{ delay: 0.11 }}
                   className="bg-white p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] shadow-lg border border-gray-100 flex flex-col items-center justify-center gap-2 hover:border-blue-200 transition-colors"
                 >
                   <FileText
@@ -278,7 +280,7 @@ export default function DashboardSection({
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
+                  transition={{ delay: 0.14 }}
                   className="bg-white p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] shadow-lg border border-gray-100 flex flex-col items-center justify-center gap-2 hover:border-rose-200 transition-colors"
                 >
                   <Heart
@@ -302,7 +304,7 @@ export default function DashboardSection({
       <motion.div
         initial={{ opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6, ...springTransition }}
+        transition={{ delay: 0.17, ...springTransition }}
         className="bg-[#111827] rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-10 flex flex-wrap gap-6 md:gap-8 items-center justify-around relative overflow-hidden shadow-2xl"
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(245,184,0,0.15),transparent_60%)]" />

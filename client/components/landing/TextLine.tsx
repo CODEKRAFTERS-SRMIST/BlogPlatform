@@ -51,9 +51,8 @@ export default function TextLine({ text, progress, range, speed, isAnchor = fals
       <motion.div
         style={{
           opacity: useTransform(progress, [range[0] + 0.05, range[0] + 0.15], [0, isYellow ? 0.4 : 0.2]),
-          scale: useTransform(progress, [range[0] + 0.05, range[0] + 0.15], [0, 1.8]),
         }}
-        className="absolute inset-0 -z-10 blur-3xl"
+        className="absolute inset-0 -z-10 scale-150 blur-3xl"
       >
         <div className={`w-full h-full ${isYellow ? "bg-[#F2B200]" : "bg-[#F2B200]"} rounded-[50%]`} />
       </motion.div>
@@ -83,15 +82,12 @@ function AnimatedLetter({ char, i, progress, range, isYellow }: any) {
   const charY = useTransform(progress, [range[0] + i * 0.008, range[0] + i * 0.008 + 0.1], [50, 0])
   const charRotate = useTransform(progress, [range[0] + i * 0.008, range[0] + i * 0.008 + 0.1], [15, 0])
 
-  // Breathing animation for each letter (kept but stabilized)
-  const breathingY = useTransform(progress, [range[0] + 0.2, 1], [0, Math.sin(i * 0.5) * 2])
-
   return (
     <motion.span
       style={{
         display: "inline-block",
         opacity: charOpacity,
-        y: useTransform([charY, breathingY], ([cy, by]) => (cy as number) + (by as number)),
+        y: charY,
         rotate: charRotate,
         color: isYellow ? "#F2B200" : "#0B1220",
       }}

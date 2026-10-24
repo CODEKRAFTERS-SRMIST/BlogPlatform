@@ -1,11 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, Mail, Lock, GraduationCap, Briefcase, ChevronRight, ArrowLeft, Clock, Settings } from "lucide-react";
+import { User, Mail, Lock, GraduationCap, Briefcase, ChevronRight, ArrowLeft, Clock, Settings, Eye, EyeOff } from "lucide-react";
 import { authApi, handleApiError } from "@/lib/api";
+import { useAuth, refreshAuth } from "@/lib/useAuth";
+import {
+  validateEmail,
+  validateRegNo,
+  validateDomain,
+  normalizeEmail,
+  normalizeRegNo,
+  DOMAIN_OPTIONS,
+} from "@/lib/validators";
+import { toast } from "react-hot-toast";
 import { GridPattern } from "@/components/background";
 
 export default function RegisterPage() {
@@ -19,8 +29,38 @@ export default function RegisterPage() {
     password: "",
     confirmPassword: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const { user: activeUser, isLoggedIn, loading: authLoading } = useAuth();
+
+  /**
+   * Already signed in? Then this form is not the right page.
+   *
+   * Reads the shared session store instead of calling /auth/me here, so this
+   * page and the one it redirects to cannot disagree about who is signed in
+   * and bounce the visitor between them.
+   */
+  useEffect(() => {
+    if (authLoading || !isLoggedIn || !activeUser) return;
+    if (activeUser.is_super_admin || activeUser.role === "admin") {
+      router.replace("/admin/dashboard");
+    } else if (activeUser.status === "pending") {
+      router.replace("/pending");
+    } else {
+      router.replace("/platform");
+    }
+  }, [authLoading, isLoggedIn, activeUser, router]);
+
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "auth_changed" && e.newValue) refreshAuth();
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -39,11 +79,25 @@ export default function RegisterPage() {
       return;
     }
 
+    const checks = [
+      validateEmail(form.email),
+      validateRegNo(form.reg_no),
+      validateDomain(form.domain),
+    ];
+    const failed = checks.find((c) => !c.valid);
+    if (failed) {
+      const errorMsg = failed.error || "Please check the details you entered";
+      setError(errorMsg);
+      toast.error(errorMsg);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       await authApi.signup({
         name: form.name,
-        email: form.email,
-        regNo: form.reg_no,
+        email: normalizeEmail(form.email),
+        regNo: normalizeRegNo(form.reg_no),
         year: parseInt(form.year),
         department: form.domain, // Mapping domain to department for consistency with AuthModal logic
         username: form.name.toLowerCase().replace(/\s+/g, '_') + Math.floor(Math.random() * 1000), // Generate a fallback username
@@ -124,12 +178,30 @@ export default function RegisterPage() {
             )}
           </AnimatePresence>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form method="post" onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <InputGroup icon={<User size={18}/>} name="name" placeholder="Full Name" value={form.name} onChange={handleInputChange} required />
               <InputGroup icon={<Mail size={18}/>} type="email" name="email" placeholder="Email Address" value={form.email} onChange={handleInputChange} required />
               <InputGroup icon={<GraduationCap size={18}/>} name="reg_no" placeholder="Registration No" value={form.reg_no} onChange={handleInputChange} required />
-              <InputGroup icon={<Settings size={18}/>} name="domain" placeholder="Department / Interest" value={form.domain} onChange={handleInputChange} required />
+              <div className="relative group">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#f5b800] transition-colors">
+                  <Settings size={18} />
+                </div>
+                <select
+                  name="domain"
+                  value={form.domain}
+                  onChange={handleInputChange}
+                  required
+                  className={`w-full bg-white/50 border border-gray-200 pl-12 pr-4 py-3.5 rounded-2xl focus:outline-none focus:border-[#f5b800] focus:ring-1 focus:ring-[#f5b800] transition-all appearance-none font-bold text-sm h-[52px] ${form.domain ? "text-gray-900" : "text-gray-400"}`}
+                >
+                  <option value="" disabled>Department / Interest</option>
+                  {DOMAIN_OPTIONS.map((option) => (
+                    <option key={option} value={option} className="text-gray-900">
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
               
               <div className="relative group">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#f5b800] transition-colors">
@@ -151,8 +223,44 @@ export default function RegisterPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <InputGroup icon={<Lock size={18}/>} type="password" name="password" placeholder="Password" value={form.password} onChange={handleInputChange} required />
-              <InputGroup icon={<Lock size={18}/>} type="password" name="confirmPassword" placeholder="Confirm Password" value={form.confirmPassword} onChange={handleInputChange} required />
+              <InputGroup
+                icon={<Lock size={18} />}
+                type={showPassword ? "text" : "password"}
+                name="password"
+                placeholder="Password"
+                value={form.password}
+                onChange={handleInputChange}
+                required
+                rightElement={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-gray-400 hover:text-gray-700 transition-colors p-1"
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                }
+              />
+              <InputGroup
+                icon={<Lock size={18} />}
+                type={showConfirmPassword ? "text" : "password"}
+                name="confirmPassword"
+                placeholder="Confirm Password"
+                value={form.confirmPassword}
+                onChange={handleInputChange}
+                required
+                rightElement={
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="text-gray-400 hover:text-gray-700 transition-colors p-1"
+                    title={showConfirmPassword ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                }
+              />
             </div>
 
             <motion.button
@@ -185,7 +293,7 @@ export default function RegisterPage() {
   );
 }
 
-function InputGroup({ icon, type = "text", ...props }: any) {
+function InputGroup({ icon, type = "text", rightElement, ...props }: any) {
   return (
     <div className="relative group">
       <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#f5b800] transition-colors">
@@ -193,9 +301,14 @@ function InputGroup({ icon, type = "text", ...props }: any) {
       </div>
       <input
         type={type}
-        className="w-full bg-white/50 border border-gray-200 text-gray-900 pl-12 pr-4 py-3.5 rounded-2xl focus:outline-none focus:border-[#f5b800] focus:ring-1 focus:ring-[#f5b800] transition-all placeholder:text-gray-400 font-bold text-sm h-[52px]"
+        className={`w-full bg-white/50 border border-gray-200 text-gray-900 pl-12 ${rightElement ? 'pr-11' : 'pr-4'} py-3.5 rounded-2xl focus:outline-none focus:border-[#f5b800] focus:ring-1 focus:ring-[#f5b800] transition-all placeholder:text-gray-400 font-bold text-sm h-[52px]`}
         {...props}
       />
+      {rightElement && (
+        <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
+          {rightElement}
+        </div>
+      )}
     </div>
   );
 }

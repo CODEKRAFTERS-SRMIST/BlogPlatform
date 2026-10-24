@@ -58,13 +58,14 @@ export default function HomeSection({
 
       <LayoutGroup>
         <motion.div 
-          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 md:gap-8"
+          className="grid auto-rows-fr grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 md:gap-8"
           layout
         >
           <AnimatePresence mode="popLayout">
             {posts.map((post, index) => (
               <motion.div
                 key={post.id}
+                className="h-full"
                 initial={{ opacity: 0, scale: 0.9, y: 30 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: -30 }}

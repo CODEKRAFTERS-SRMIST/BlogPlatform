@@ -1,5 +1,6 @@
 import { AxiosError } from "axios";
 import apiClient from "./api-client";
+import { compressImage, formatBytes, HARD_LIMIT_BYTES } from "./imageCompress";
 
 export interface ApiResponse<T> {
   data?: T;
@@ -55,10 +56,20 @@ export interface Post {
   tags?: string[];
   subtitle?: string;
   coverImage?: string;
+  // The admin review endpoint returns the writer's whole profile so the
+  // reviewer sees who they are without a second request; the public feed
+  // returns only the first three.
   author: {
     id: string;
     name: string;
     email: string;
+    reg_no?: string;
+    year?: string;
+    domain?: string;
+    role?: string;
+    is_super_admin?: boolean;
+    status?: string;
+    created_at?: string;
   };
   _count: {
     likes: number;
@@ -70,25 +81,60 @@ export interface Post {
 export const handleApiError = (error: unknown): string => {
   if (error instanceof AxiosError) {
     const respData = error.response?.data as any;
-
+    // 1. Check nested backend format { error: { message: "..." } }
     if (respData?.error) {
       const err = respData.error;
       if (typeof err === "string") return err;
-
+      if (err.message && typeof err.message === "string") return err.message;
       if (err.fieldErrors && typeof err.fieldErrors === "object") {
         const messages = Object.values(err.fieldErrors).flat().filter(Boolean);
         if (messages.length) return messages.join("; ");
       }
-
       if (Array.isArray(err)) return err.join("; ");
-      if (err.message) return String(err.message);
-
-      return JSON.stringify(err);
     }
-
-    return respData?.message || error.message || "An error occurred";
+    // 2. Check root message { message: "..." }
+    if (respData?.message && typeof respData.message === "string") {
+      return respData.message;
+    }
+    // 3. Status-code based human friendly fallbacks
+    if (error.response?.status === 401) return "Incorrect email or password. Please try again.";
+    if (error.response?.status === 403) return "Your account is awaiting admin approval or you do not have permission.";
+    if (error.response?.status === 404) return "Requested resource was not found.";
+    if (error.response?.status === 409) return "An account or resource with these details already exists.";
+    if (error.response?.status === 413) return "File size is too large. Please upload an image under 5MB.";
+    if (error.response?.status === 429) return "Too many requests. Please wait a moment and try again.";
   }
-  return "An unexpected error occurred";
+  if (error instanceof Error) return error.message;
+  return "Unable to connect to the server. Please check your network connection.";
+};
+
+/**
+ * The machine-readable `code` the API sends with an error, e.g.
+ * "PENDING_APPROVAL" or "INVALID_CREDENTIALS". Prefer this over matching
+ * against the human-readable message, which is free to be reworded.
+ */
+export const getApiErrorCode = (error: unknown): string | null => {
+  if (error instanceof AxiosError) {
+    const code = (error.response?.data as any)?.error?.code;
+    if (typeof code === "string") return code;
+  }
+  return null;
+};
+
+/** True when the failure was "this account is not approved yet". */
+export const isPendingApprovalError = (error: unknown): boolean => {
+  const code = getApiErrorCode(error);
+  if (code) return code === "PENDING_APPROVAL" || code === "NOT_APPROVED";
+
+  // Fallback for responses that carry no code
+  if (error instanceof AxiosError) {
+    const message = handleApiError(error).toLowerCase();
+    return (
+      error.response?.status === 403 &&
+      (message.includes("not approved") || message.includes("awaiting"))
+    );
+  }
+  return false;
 };
 
 export const authApi = {
@@ -122,7 +168,14 @@ export const authApi = {
   },
 
   logout: async (): Promise<void> => {
-    await apiClient.post("/auth/logout");
+    try {
+      await apiClient.post("/auth/logout");
+    } finally {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("auth_token"); // left over from older builds
+        localStorage.setItem("auth_changed", String(Date.now()));
+      }
+    }
   },
 
   getMe: async (): Promise<User> => {
@@ -137,13 +190,31 @@ export const authApi = {
 };
 
 export const uploadImage = async (file: File): Promise<string> => {
+  // Shrink first: phone photos are routinely larger than the API's 5 MB cap,
+  // and an uncompressed cover makes the feed slow on mobile data.
+  const { file: toUpload } = await compressImage(file);
+
+  if (toUpload.size > HARD_LIMIT_BYTES) {
+    throw new Error(
+      `This image is ${formatBytes(toUpload.size)} even after compression. Please pick a smaller one.`,
+    );
+  }
+
   const formData = new FormData();
-  formData.append("image", file);
+  formData.append("image", toUpload);
   const response = await apiClient.post("/upload", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
   return response.data?.data?.url || response.data?.url;
 };
+
+export interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+}
 
 export const blogApi = {
   getAllPosts: async (page?: number, limit?: number): Promise<Post[]> => {
@@ -153,6 +224,26 @@ export const blogApi = {
     return response.data?.data?.blogs || response.data?.blogs || [];
   },
 
+  /** One page of published posts, with the paging details. */
+  getPostsPage: async (
+    page = 1,
+    limit?: number,
+  ): Promise<{ posts: Post[]; pagination: Pagination }> => {
+    const response = await apiClient.get("/blogs/public", {
+      params: { page, limit },
+    });
+    const data = response.data?.data ?? response.data ?? {};
+    const posts: Post[] = data.blogs ?? [];
+    const pagination: Pagination = data.pagination ?? {
+      page,
+      limit: limit ?? posts.length,
+      total: posts.length,
+      totalPages: 1,
+      hasMore: false,
+    };
+    return { posts, pagination };
+  },
+
   getPostById: async (id: string): Promise<Post> => {
     const response = await apiClient.get(`/blogs/public/${id}`);
     return response.data?.data || response.data;
@@ -160,6 +251,7 @@ export const blogApi = {
 
   createPost: async (data: {
     title: string;
+    subtitle?: string;
     content: string;
     image?: string;
     coverImage?: string;
@@ -170,9 +262,10 @@ export const blogApi = {
   }): Promise<Post> => {
     const mappedData = {
       title: data.title,
+      subtitle: data.subtitle || data.excerpt,
       content: data.content,
       image: data.image || data.coverImage,
-      links: data.links || data.slug,
+      links: data.links || null,
     };
     const response = await apiClient.post("/blogs", mappedData);
     return response.data?.data || response.data;
@@ -184,6 +277,7 @@ export const blogApi = {
   ): Promise<Post> => {
     const mappedData = {
       ...data,
+      subtitle: data.subtitle ?? data.excerpt,
       image: data.image || data.coverImage,
     };
     const response = await apiClient.patch(`/blogs/${id}`, mappedData);

@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 dotenv.config();
 import { isRevoked } from './jwt.js';
+import prisma from '../db/db.js';
 
 /**
  * Optional authentication middleware
@@ -82,22 +83,90 @@ export function authenticate(req, res, next) {
  * @param {string|string[]} allowedRoles - Role(s) allowed to access the route
  * @returns {Function} Express middleware
  */
+/**
+ * Loads the user's current role straight from the database.
+ *
+ * The JWT is a snapshot taken up to 15 minutes ago, so it cannot be trusted
+ * for authorisation decisions: a user demoted a minute ago still carries a
+ * token that says "admin". Permission is therefore always read fresh, which
+ * also picks up promotions immediately.
+ */
+async function loadCurrentUser(req) {
+  if (!req.user?.id) return null;
+  const freshUser = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { role: true, is_super_admin: true, status: true },
+  });
+  if (!freshUser) return null;
+
+  // Keep the request in step with what the database actually says
+  req.user.role = freshUser.role;
+  req.user.is_super_admin = freshUser.is_super_admin;
+  req.user.status = freshUser.status;
+  return freshUser;
+}
+
 export function requireRole(allowedRoles) {
   // Convert single role to array
   const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
-  
-  return (req, res, next) => {
+
+  return async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ error: "Authentication required" });
     }
 
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ 
+    const forbidden = () =>
+      res.status(403).json({
         error: "Forbidden",
-        message: `This action requires one of the following roles: ${roles.join(', ')}`
+        message: `This action requires one of the following roles: ${roles.join(', ')}`,
+      });
+
+    let freshUser;
+    try {
+      freshUser = await loadCurrentUser(req);
+    } catch (dbErr) {
+      // Deny rather than fall back to the token: trusting stale claims here is
+      // exactly how a demoted admin keeps their powers.
+      console.error("requireRole DB check failed:", dbErr);
+      return res.status(503).json({
+        error: "Service unavailable",
+        message: "Could not verify your permissions. Please try again.",
       });
     }
 
-    next();
+    if (!freshUser || freshUser.status !== 'approved') return forbidden();
+    if (roles.includes(freshUser.role) || freshUser.is_super_admin) return next();
+
+    return forbidden();
   };
+}
+
+/**
+ * Super Admin check middleware
+ * Restricts access strictly to Super Administrators (is_super_admin === true)
+ */
+export async function requireSuperAdmin(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+
+  let freshUser;
+  try {
+    freshUser = await loadCurrentUser(req);
+  } catch (err) {
+    console.error("requireSuperAdmin DB check error:", err);
+    return res.status(503).json({
+      error: "Service unavailable",
+      message: "Could not verify your permissions. Please try again.",
+    });
+  }
+
+  if (freshUser && freshUser.status === 'approved' && freshUser.is_super_admin) {
+    return next();
+  }
+
+  return res.status(403).json({
+    error: "Forbidden",
+    message: "This action is restricted to Super Administrators only.",
+  });
 }

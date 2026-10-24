@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
+import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import registerRoutes from "./routes/index.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
@@ -21,7 +22,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:", process.env.R2_PUBLIC_URL].filter(Boolean),
+      imgSrc: ["'self'", "data:", "blob:", "https:", process.env.R2_PUBLIC_URL].filter(Boolean),
       connectSrc: ["'self'", process.env.FRONTEND_URL || 'http://localhost:3000'],
       fontSrc: ["'self'", "https:"],
       objectSrc: ["'none'"],
@@ -43,6 +44,17 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 app.use(generalLimiter);
+
+// Serves the images written by the local-disk fallback in r2.service.js, used
+// when R2 is not configured (a plain checkout). With R2 configured this
+// directory stays empty and nothing is served from it.
+app.use(
+  "/uploads",
+  express.static(path.resolve(process.cwd(), "uploads"), {
+    maxAge: "7d",
+    fallthrough: true,
+  }),
+);
 
 app.use("/api", uploadRoute);
 

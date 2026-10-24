@@ -2,7 +2,8 @@ import app from "./app.js";
 import { logger } from "./utils/logger.js";
 import "./config/env.js";
 
-const PORT = process.env.PORT || 4000;
+// Matches the Next proxy default in client/next.config.ts.
+const PORT = process.env.PORT || 5000;
 
 process.on("unhandledRejection", (reason) => {
   logger.error("FATAL: Unhandled Rejection", { reason: reason?.toString() });

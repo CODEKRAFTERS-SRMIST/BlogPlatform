@@ -1,28 +1,122 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   ShieldCheck,
   Clock,
   CheckCircle,
-  XCircle,
-  ChevronRight,
-  User,
-  Calendar,
-  ExternalLink,
   Loader2,
-  FileText,
-  Send,
+  ImageIcon,
+  ChevronRight,
+  RefreshCw,
 } from "lucide-react";
 import { adminApi, handleApiError, Post } from "@/lib/api";
+import { ChevronLeft } from "lucide-react";
+import { truncateChars } from "@/lib/blogLimits";
+import BlogReviewModal from "@/components/BlogReviewModal";
 import { toast } from "react-hot-toast";
+
+/**
+ * The queue of stories waiting on an admin, as a stack of cards.
+ *
+ * Tapping a card opens the whole story with the approve and reject buttons
+ * under it, the same way a reader opens a post in the public feed. The older
+ * split pane tried to show the queue, the story and the decision at once,
+ * which does not fit a phone: the story got a few lines and the buttons sat
+ * under the bottom nav.
+ */
 
 interface AdminPipelineSectionProps {
   onApproveSuccess?: () => void;
   onAction?: (id: string) => void;
   blogs?: Post[];
   setBlogs?: React.Dispatch<React.SetStateAction<Post[]>>;
+  /** Bumped by the page's Refresh button to pull the queue again. */
+  refreshSignal?: number;
+}
+
+function ReviewCard({
+  blog,
+  onOpen,
+}: {
+  blog: Post;
+  onOpen: () => void;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const cover = blog.image || blog.coverImage;
+  const author = blog.author || ({} as Post["author"]);
+  const summary =
+    blog.subtitle?.trim() || blog.content?.trim() || "";
+
+  return (
+    <motion.button
+      type="button"
+      onClick={onOpen}
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.97 }}
+      whileTap={{ scale: 0.985 }}
+      className="group flex h-full w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white text-left transition-colors hover:border-amber-300 hover:shadow-lg sm:rounded-[1.5rem]"
+    >
+      <div className="relative h-32 w-full shrink-0 overflow-hidden bg-gray-100 sm:h-40">
+        {cover && !imageFailed ? (
+          <img
+            src={cover}
+            alt=""
+            loading="lazy"
+            onError={() => setImageFailed(true)}
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-gray-300">
+            <ImageIcon size={26} />
+          </div>
+        )}
+        <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-lg bg-white/95 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-amber-700 shadow-sm backdrop-blur-sm">
+          <Clock size={9} className="shrink-0" />
+          Pending
+        </span>
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-4">
+        <h3 className="wrap-anywhere line-clamp-2 text-[13px] font-black leading-snug text-gray-900 sm:text-[15px]">
+          {blog.title}
+        </h3>
+
+        {summary && (
+          <p className="wrap-anywhere mt-1.5 text-[11px] font-medium leading-relaxed text-gray-500 sm:text-xs">
+            {truncateChars(summary, 100)}
+          </p>
+        )}
+
+        <div className="mt-3 flex min-w-0 items-center gap-2 border-t border-gray-100 pt-3">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#f5b800] to-amber-500 text-[11px] font-black text-white">
+            {author.name?.charAt(0)?.toUpperCase() || "U"}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[11px] font-black text-gray-800">
+              {author.name || "Unknown author"}
+            </span>
+            <span className="block truncate text-[9px] font-bold uppercase tracking-widest text-gray-400">
+              {blog.created_at
+                ? new Date(blog.created_at).toLocaleDateString(undefined, {
+                    day: "numeric",
+                    month: "short",
+                  })
+                : "—"}
+              {author.domain ? ` · ${author.domain}` : ""}
+            </span>
+          </span>
+          <ChevronRight
+            size={15}
+            className="shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-amber-500"
+          />
+        </div>
+      </div>
+    </motion.button>
+  );
 }
 
 export default function AdminPipelineSection({
@@ -30,16 +124,34 @@ export default function AdminPipelineSection({
   onAction,
   blogs,
   setBlogs,
+  refreshSignal = 0,
 }: AdminPipelineSectionProps) {
   const [internalPending, setInternalPending] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedBlog, setSelectedBlog] = useState<Post | null>(null);
+  const [openBlog, setOpenBlog] = useState<Post | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [rejectMode, setRejectMode] = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
+  const [page, setPage] = useState(1);
 
   const displayBlogs = blogs || internalPending;
+
+  /**
+   * The queue is paged in the browser, not on the server.
+   *
+   * The admin endpoint hands back the whole pending list in one request, so
+   * splitting it here costs no extra round trip and switching page is
+   * instant. If the queue ever grows past a few hundred this should move
+   * server-side, the way the public feed already works.
+   */
+  const PAGE_SIZE = 9;
+  const totalPages = Math.max(Math.ceil(displayBlogs.length / PAGE_SIZE), 1);
+  const safePage = Math.min(page, totalPages);
+  const pageBlogs = displayBlogs.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // Clearing the last card on a page should not leave you staring at nothing.
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const fetchPending = async () => {
     try {
@@ -47,6 +159,7 @@ export default function AdminPipelineSection({
       setError(null);
       const data = await adminApi.getBlogs("pending_review");
       setInternalPending(data);
+      setPage(1);
     } catch (err) {
       setError(handleApiError(err));
     } finally {
@@ -55,32 +168,29 @@ export default function AdminPipelineSection({
   };
 
   useEffect(() => {
-    if (!blogs) {
-      fetchPending();
-    }
+    if (!blogs) fetchPending();
   }, [blogs]);
 
+  // The page's Refresh button bumps this; the first render is skipped because
+  // the effect above has already fetched.
   useEffect(() => {
-    if (displayBlogs.length > 0 && !selectedBlog) {
-      setSelectedBlog(displayBlogs[0]);
-    }
-  }, [displayBlogs, selectedBlog]);
+    if (refreshSignal > 0) fetchPending();
+  }, [refreshSignal]);
+
+  /** Drops a story from whichever list is driving the view. */
+  const removeFromQueue = (id: string) => {
+    const without = (prev: Post[]) => prev.filter((b) => b.id !== id);
+    if (setBlogs) setBlogs(without);
+    setInternalPending(without);
+    setOpenBlog((current) => (current?.id === id ? null : current));
+  };
 
   const handleApprove = async (id: string) => {
-    if (actionLoading === id) return; // Guard against double clicks
+    if (actionLoading) return; // guard against double taps
     setActionLoading(id);
     try {
       await adminApi.approveBlog(id);
-
-      const updateList = (prev: Post[]) => prev.filter((b) => b.id !== id);
-      if (setBlogs) setBlogs(updateList);
-      setInternalPending(updateList);
-
-      if (selectedBlog?.id === id) {
-        const nextBlog = displayBlogs.find((b) => b.id !== id) || null;
-        setSelectedBlog(nextBlog);
-      }
-
+      removeFromQueue(id);
       toast.success("Story approved and published!");
       onAction?.(id);
       onApproveSuccess?.();
@@ -91,29 +201,18 @@ export default function AdminPipelineSection({
     }
   };
 
-  const handleReject = async (id: string) => {
-    if (actionLoading === id) return;
-    if (!rejectReason.trim()) {
-      toast.error("Rejection reason is required");
+  const handleReject = async (id: string, reason: string) => {
+    if (actionLoading) return;
+    if (!reason.trim()) {
+      toast.error("Please say why it is going back");
       return;
     }
 
     setActionLoading(id);
     try {
-      await adminApi.rejectBlog(id, rejectReason);
-
-      const updateList = (prev: Post[]) => prev.filter((b) => b.id !== id);
-      if (setBlogs) setBlogs(updateList);
-      setInternalPending(updateList);
-
-      if (selectedBlog?.id === id) {
-        const nextBlog = displayBlogs.find((b) => b.id !== id) || null;
-        setSelectedBlog(nextBlog);
-      }
-
-      setRejectMode(false);
-      setRejectReason("");
-      toast.success("Story rejected.");
+      await adminApi.rejectBlog(id, reason);
+      removeFromQueue(id);
+      toast.success("Sent back to the writer.");
       onAction?.(id);
     } catch (err) {
       toast.error(handleApiError(err));
@@ -124,228 +223,131 @@ export default function AdminPipelineSection({
 
   if (loading && displayBlogs.length === 0) {
     return (
-      <div className="w-full flex flex-col items-center justify-center py-20">
-        <Loader2 className="animate-spin text-[#f5b800] w-12 h-12 mb-4" />
-        <p className="text-gray-400 font-black uppercase tracking-widest text-xs">
-          Syncing Review Pipeline...
+      <div className="flex w-full flex-col items-center justify-center py-16 sm:py-20">
+        <Loader2 className="mb-4 h-9 w-9 animate-spin text-[#f5b800]" />
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+          Loading submissions...
         </p>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-7xl flex flex-col h-full">
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 md:mb-12 gap-4">
-        <motion.h1
-          initial={{ x: -20, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          className="text-4xl md:text-5xl font-black text-gray-900 flex items-center gap-4"
+    <div className="flex w-full min-w-0 max-w-7xl flex-col">
+      {/* The count sits on its own line so the title never has to share a
+          cramped row with it on a phone. */}
+      <div className="mb-5 flex min-w-0 items-start justify-between gap-3 sm:mb-8">
+        <div className="min-w-0">
+          <h1 className="flex min-w-0 items-center gap-2 text-lg font-black tracking-tight text-gray-900 min-[380px]:text-xl sm:text-3xl lg:text-4xl">
+            <ShieldCheck className="h-5 w-5 shrink-0 text-amber-600 sm:h-8 sm:w-8" />
+            <span className="truncate">Review Pipeline</span>
+          </h1>
+          <p className="mt-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">
+            {displayBlogs.length === 0
+              ? "Nothing waiting"
+              : `${displayBlogs.length} ${displayBlogs.length === 1 ? "story" : "stories"} waiting${
+                  totalPages > 1 ? ` · page ${safePage} of ${totalPages}` : ""
+                } · tap to read`}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={fetchPending}
+          disabled={loading}
+          aria-label="Refresh queue"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 transition-colors hover:border-amber-300 hover:text-amber-600 disabled:opacity-50"
         >
-          <ShieldCheck className="text-amber-600 w-8 h-8 md:w-10 md:h-10" />
-          Review Pipeline
-          <span className="text-xl text-gray-300 font-medium ml-2">
-            {displayBlogs.length} pending
-          </span>
-        </motion.h1>
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+        </button>
       </div>
 
+      {error && (
+        <div className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3 text-[13px] font-bold text-rose-700 sm:px-4">
+          <span className="wrap-anywhere">{error}</span>{" "}
+          <button onClick={fetchPending} className="underline hover:no-underline">
+            Try again
+          </button>
+        </div>
+      )}
+
       {displayBlogs.length === 0 ? (
-        <div className="bg-white/70 backdrop-blur-xl border-4 border-dashed border-gray-100 rounded-[3rem] p-20 text-center">
-          <CheckCircle size={80} className="mx-auto text-emerald-100 mb-6" />
-          <h2 className="text-3xl font-black text-gray-300 uppercase tracking-tighter">
-            Queue is Crystal Clear
+        <div className="rounded-[1.5rem] border-4 border-dashed border-gray-100 bg-white/70 px-4 py-12 text-center sm:rounded-[2.5rem] sm:py-20">
+          <CheckCircle className="mx-auto mb-4 h-12 w-12 text-emerald-200 sm:h-20 sm:w-20" />
+          <h2 className="text-base font-black uppercase tracking-tight text-gray-400 sm:text-2xl">
+            Nothing to review
           </h2>
-          <p className="text-gray-400 font-bold mt-2">
-            All submissions have been processed. Great job!
+          <p className="mt-2 text-[13px] font-bold text-gray-400">
+            Every submission has been dealt with.
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full min-h-[700px]">
-          {/* Sidebar List */}
-          <div className="lg:col-span-4 flex flex-col gap-4 overflow-y-auto max-h-[800px] custom-scrollbar pr-2">
-            <AnimatePresence mode="popLayout">
-              {displayBlogs.map((blog) => (
-                <motion.div
-                  key={blog.id}
-                  layoutId={blog.id}
-                  onClick={() => setSelectedBlog(blog)}
-                  className={`p-6 rounded-[2rem] border transition-all cursor-pointer group relative overflow-hidden ${
-                    selectedBlog?.id === blog.id
-                      ? "bg-black text-white border-black shadow-2xl shadow-gray-200 -translate-y-1"
-                      : "bg-white/80 border-gray-100 hover:border-amber-200 hover:bg-white"
-                  }`}
-                >
-                  <div className="relative z-10">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Clock
-                        size={12}
-                        className={
-                          selectedBlog?.id === blog.id
-                            ? "text-amber-400"
-                            : "text-gray-400"
-                        }
-                      />
-                      <span
-                        className={`text-[10px] font-black uppercase tracking-widest ${selectedBlog?.id === blog.id ? "text-amber-400" : "text-gray-400"}`}
-                      >
-                        {new Date().toLocaleDateString()}
-                      </span>
-                    </div>
-                    <h3 className="text-lg font-black leading-tight line-clamp-2 mb-4 group-hover:text-amber-600 transition-colors">
-                      {blog.title}
-                    </h3>
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs ${
-                          selectedBlog?.id === blog.id
-                            ? "bg-white/10 text-white"
-                            : "bg-gray-50 text-gray-400"
-                        }`}
-                      >
-                        {blog.author?.name?.charAt(0) || "U"}
-                      </div>
-                      <span
-                        className={`text-xs font-bold ${selectedBlog?.id === blog.id ? "text-gray-400" : "text-gray-500"}`}
-                      >
-                        {blog.author?.name || "Unknown Author"}
-                      </span>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-
-          {/* Full Detail View */}
-          <div className="lg:col-span-8 bg-white/70 backdrop-blur-2xl border border-white rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col">
-            {selectedBlog ? (
-              <div className="flex flex-col h-full">
-                {/* Header Actions */}
-                <div className="p-6 bg-white/50 border-b border-gray-100 flex items-center justify-between sticky top-0 z-20 backdrop-blur-md">
-                  <div className="flex items-center gap-4 text-xs font-black uppercase tracking-widest text-gray-400">
-                    <FileText size={16} /> Reading Mode
-                  </div>
-                  <div className="flex gap-3">
-                    {!rejectMode ? (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRejectMode(true);
-                          }}
-                          disabled={!!actionLoading}
-                          className="px-6 py-3 bg-rose-50 text-rose-600 rounded-2xl font-black text-sm hover:bg-rose-100 transition-all flex items-center gap-2"
-                        >
-                          <XCircle size={18} /> Reject
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleApprove(selectedBlog.id);
-                          }}
-                          disabled={!!actionLoading}
-                          className="px-8 py-3 bg-emerald-600 text-white rounded-2xl font-black text-sm hover:bg-black transition-all flex items-center gap-2 shadow-lg shadow-emerald-100"
-                        >
-                          {actionLoading === selectedBlog.id ? (
-                            <Loader2 className="animate-spin" size={18} />
-                          ) : (
-                            <CheckCircle size={18} />
-                          )}
-                          Approve & Publish
-                        </button>
-                      </>
-                    ) : (
-                      <div className="flex items-center gap-3 w-full max-w-xl">
-                        <input
-                          autoFocus
-                          placeholder="Enter rejection reason..."
-                          value={rejectReason}
-                          onChange={(e) => setRejectReason(e.target.value)}
-                          className="flex-1 px-6 py-3 bg-gray-50 border border-gray-200 rounded-[1.2rem] focus:outline-none focus:border-rose-500 font-bold text-sm"
-                        />
-                        <button
-                          onClick={() => setRejectMode(false)}
-                          className="p-3 text-gray-400 hover:text-gray-600"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => handleReject(selectedBlog.id)}
-                          disabled={!!actionLoading}
-                          className="px-6 py-3 bg-rose-600 text-white rounded-2xl font-black text-sm hover:bg-black transition-all flex items-center gap-2"
-                        >
-                          {actionLoading ? (
-                            <Loader2 className="animate-spin" size={18} />
-                          ) : (
-                            <Send size={18} />
-                          )}
-                          Send
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-10 md:p-14 custom-scrollbar">
-                  <div className="w-full h-[400px] rounded-[2.5rem] overflow-hidden mb-12 shadow-xl border-8 border-white">
-                    <img
-                      src={selectedBlog.image || selectedBlog.coverImage}
-                      className="w-full h-full object-cover"
-                      alt="Cover"
-                      loading="lazy"
-                    />
-                  </div>
-
-                  <div className="max-w-3xl mx-auto">
-                    <div className="flex gap-2 mb-8">
-                      {selectedBlog.tags?.map((t, i) => (
-                        <span
-                          key={i}
-                          className="px-3 py-1 bg-gray-100 text-gray-500 rounded-lg text-[10px] font-black uppercase tracking-widest"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-
-                    <h2 className="text-4xl md:text-5xl lg:text-6xl font-black text-gray-900 leading-[1.1] mb-8 tracking-tighter">
-                      {selectedBlog.title}
-                    </h2>
-
-                    <div className="flex items-center gap-4 mb-12 pb-12 border-b border-gray-100">
-                      <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
-                        {selectedBlog.author?.name?.charAt(0) || "U"}
-                      </div>
-                      <div>
-                        <div className="font-black text-gray-900">
-                          {selectedBlog.author?.name || "Unknown Author"}
-                        </div>
-                        <div className="text-xs text-gray-400 font-bold uppercase tracking-widest">
-                          Submission Date:{" "}
-                          {new Date(
-                            selectedBlog.created_at,
-                          ).toLocaleDateString()}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="prose prose-xl max-w-none text-gray-800 font-medium leading-relaxed whitespace-pre-wrap">
-                      {selectedBlog.content}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-20 text-center opacity-30">
-                <ShieldCheck size={100} className="mb-6" />
-                <h3 className="text-2xl font-black uppercase tracking-widest">
-                  Select a draft to initiate review
-                </h3>
-              </div>
-            )}
-          </div>
+        /* One column on the narrowest phones, two once there is room, three on
+           a wide screen. No fixed widths anywhere, so 300px still works. */
+        <div className="grid grid-cols-1 gap-3 min-[560px]:auto-rows-fr min-[560px]:grid-cols-2 sm:gap-4 xl:grid-cols-3">
+          <AnimatePresence mode="popLayout">
+            {pageBlogs.map((blog) => (
+              <ReviewCard
+                key={blog.id}
+                blog={blog}
+                onOpen={() => setOpenBlog(blog)}
+              />
+            ))}
+          </AnimatePresence>
         </div>
       )}
+
+      {totalPages > 1 && (
+        <div className="mt-5 flex min-w-0 flex-wrap items-center justify-center gap-1.5 sm:mt-7 sm:gap-2">
+          <button
+            type="button"
+            onClick={() => setPage((n) => Math.max(n - 1, 1))}
+            disabled={safePage === 1}
+            aria-label="Previous page"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 transition-colors hover:border-amber-300 hover:text-amber-600 disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:text-gray-500"
+          >
+            <ChevronLeft size={15} />
+          </button>
+
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setPage(n)}
+              aria-current={n === safePage ? "page" : undefined}
+              className={`h-9 min-w-[2.25rem] shrink-0 rounded-xl px-2 text-[12px] font-black transition-colors ${
+                n === safePage
+                  ? "bg-gray-900 text-white"
+                  : "border border-gray-200 bg-white text-gray-500 hover:border-amber-300 hover:text-amber-600"
+              }`}
+            >
+              {n}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            onClick={() => setPage((n) => Math.min(n + 1, totalPages))}
+            disabled={safePage === totalPages}
+            aria-label="Next page"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 transition-colors hover:border-amber-300 hover:text-amber-600 disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:text-gray-500"
+          >
+            <ChevronRight size={15} />
+          </button>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {openBlog && (
+          <BlogReviewModal
+            key={openBlog.id}
+            blog={openBlog}
+            busy={actionLoading === openBlog.id}
+            onClose={() => setOpenBlog(null)}
+            onApprove={handleApprove}
+            onReject={handleReject}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

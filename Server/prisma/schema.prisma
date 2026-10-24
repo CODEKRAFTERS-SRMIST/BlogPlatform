@@ -71,6 +71,7 @@ model AuditLog {
 model Blog {
   id               String     @id @default(uuid())
   title            String
+  subtitle         String?
   content          String
   image            String?
   links            String?

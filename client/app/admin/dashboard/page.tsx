@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
+import { motion } from "framer-motion";
 import { toast } from "react-hot-toast";
 import {
   Users,
@@ -27,23 +28,24 @@ import { GridPattern } from "@/components/background";
 import SlotCounter from "@/components/SlotCounter";
 import { springTransition } from "@/lib/animations";
 import { AuthModal } from "@/components/AuthModal";
-import AdminPipelineSection from "@/components/sections/AdminPipelineSection";
 
 export default function AdminDashboard() {
   const router = useRouter();
   const { user, isLoggedIn, loading: authLoading, logout } = useAuth();
+  const isSuperAdmin = Boolean(user?.is_super_admin);
 
   const [stats, setStats] = useState<any>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [pendingUsers, setPendingUsers] = useState<User[]>([]);
   const [blogs, setBlogs] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "users" | "blogs">(
+  const [activeTab, setActiveTab] = useState<"overview" | "users">(
     "overview",
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [partial, setPartial] = useState<string | null>(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   useEffect(() => {
@@ -60,42 +62,70 @@ export default function AdminDashboard() {
     }
   }, [authLoading, isLoggedIn, user, router]);
 
+  /**
+   * Loads the four dashboard feeds independently of one another.
+   *
+   * They used to share a single Promise.all, so one rejection discarded the
+   * whole page: an admin who is not a super admin was refused the member
+   * roster and saw nothing but "Connection Failed". Each call now stands on
+   * its own - whatever loads is shown, and only a complete failure counts as
+   * an outage.
+   */
   const fetchData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+    setLoading(true);
+    setError(null);
+    setPartial(null);
 
-      // Create a promise that rejects after 15 seconds
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(
-          () =>
-            reject(new Error("Connection timeout - server taking too long")),
-          15000,
-        );
-      });
+    const withTimeout = <T,>(p: Promise<T>): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("The server is taking too long to respond")),
+            15000,
+          ),
+        ),
+      ]);
 
-      const [statsRes, usersRes, pendingRes, blogsRes] = (await Promise.race([
-        Promise.all([
-          adminApi.getStats(),
-          adminApi.getAllUsers(),
-          adminApi.getPendingUsers(),
-          adminApi.getBlogs("pending_review"),
-        ]),
-        timeoutPromise,
-      ])) as any;
+    const [statsRes, usersRes, pendingRes, blogsRes] = await Promise.allSettled([
+      withTimeout(adminApi.getStats()),
+      withTimeout(adminApi.getAllUsers()),
+      withTimeout(adminApi.getPendingUsers()),
+      withTimeout(adminApi.getBlogs("pending_review")),
+    ]);
 
-      setStats(statsRes);
-      setAllUsers(usersRes);
-      setPendingUsers(pendingRes);
-      setBlogs(blogsRes);
-    } catch (err: any) {
-      console.error("Failed to fetch admin data:", err);
+    if (statsRes.status === "fulfilled") setStats(statsRes.value);
+    if (usersRes.status === "fulfilled") setAllUsers(usersRes.value || []);
+    if (pendingRes.status === "fulfilled") setPendingUsers(pendingRes.value || []);
+    if (blogsRes.status === "fulfilled") setBlogs(blogsRes.value || []);
+
+    const results: Array<[string, PromiseSettledResult<any>]> = [
+      ["statistics", statsRes],
+      ["the member list", usersRes],
+      ["pending registrations", pendingRes],
+      ["stories awaiting review", blogsRes],
+    ];
+    const failures = results.filter(([, r]) => r.status === "rejected");
+
+    if (failures.length === results.length) {
+      const reason = (failures[0][1] as PromiseRejectedResult).reason;
+      console.error("Failed to fetch admin data:", reason);
       setError(
-        handleApiError(err) || err.message || "Failed to load dashboard data",
+        handleApiError(reason) || reason?.message || "Failed to load dashboard data",
       );
-    } finally {
-      setLoading(false);
+    } else if (failures.length > 0) {
+      failures.forEach(([label, r]) =>
+        console.warn(
+          `Admin dashboard: could not load ${label}`,
+          (r as PromiseRejectedResult).reason,
+        ),
+      );
+      setPartial(
+        `Could not load ${failures.map(([l]) => l).join(" or ")}. Everything else below is current.`,
+      );
     }
+
+    setLoading(false);
   };
 
   const handlePromoteUser = async (userId: string) => {
@@ -213,7 +243,7 @@ export default function AdminDashboard() {
   if (error && !stats) {
     return (
       <div className="min-h-screen bg-[#f8f7f4] flex flex-col items-center justify-center p-6 text-center">
-        <div className="bg-white/70 backdrop-blur-xl border border-rose-100 p-12 rounded-[3rem] shadow-xl max-w-lg">
+        <div className="bg-white/90 border border-rose-100 p-12 rounded-[3rem] shadow-xl max-w-lg">
           <XCircle size={64} className="text-rose-500 mx-auto mb-6" />
           <h2 className="text-3xl font-black text-gray-900 mb-4 tracking-tighter">
             Connection Failed
@@ -249,25 +279,23 @@ export default function AdminDashboard() {
         isSuperAdmin={user?.is_super_admin}
       />
 
-      <main className="relative z-10 min-h-screen w-full flex flex-col items-center pt-20 md:pt-12 pb-24 md:pb-12 px-4 md:px-8 lg:pl-32 transition-all duration-300">
-        <div className="w-full max-w-7xl flex flex-col gap-8">
+      <main className="pb-mobile-nav relative z-10 min-h-screen w-full min-w-0 flex flex-col items-center pt-16 sm:pt-20 md:pt-12 px-3 sm:px-5 md:px-8 lg:pl-32 transition-all duration-300">
+        <div className="w-full min-w-0 max-w-7xl flex flex-col gap-4 sm:gap-6 md:gap-8">
           {/* Hero Section - Admin Style */}
-          <div className="relative overflow-hidden rounded-[2.5rem] bg-white/70 backdrop-blur-2xl border border-white/70 shadow-[0_40px_80px_-25px_rgba(0,0,0,0.1)]">
-            <motion.div
-              className="absolute -top-24 -left-24 w-[420px] h-[420px] rounded-full bg-gradient-to-br from-amber-500/10 to-transparent blur-3xl"
-              animate={{ x: [0, 30, -30, 0], scale: [1, 1.1, 0.9, 1] }}
-              transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
-            />
+          <div className="relative min-w-0 overflow-hidden rounded-[1.5rem] sm:rounded-[2.5rem] bg-white/90 border border-white/70 shadow-[0_40px_80px_-25px_rgba(0,0,0,0.1)]">
+            {/* Static: an animated blurred layer forces a full repaint of the
+                card behind it on every frame, permanently. */}
+            <div className="pointer-events-none absolute -top-24 -left-24 w-[420px] h-[420px] rounded-full bg-gradient-to-br from-amber-500/10 to-transparent blur-3xl" />
 
-            <div className="relative z-10 p-8 md:p-12">
-              <div className="flex flex-col lg:flex-row gap-12 items-start justify-between">
-                <div className="flex-1">
+            <div className="relative z-10 min-w-0 p-4 sm:p-7 md:p-12">
+              <div className="flex min-w-0 flex-col lg:flex-row gap-6 sm:gap-9 lg:gap-12 items-start justify-between">
+                <div className="min-w-0 flex-1">
                   <motion.div
                     initial={{ y: 16, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
-                    className="inline-flex items-center gap-3 px-5 py-2 rounded-full bg-amber-50 border border-amber-100 shadow-sm mb-8"
+                    className="inline-flex items-center gap-2 px-3 sm:px-5 py-1.5 sm:py-2 rounded-full bg-amber-50 border border-amber-100 shadow-sm mb-4 sm:mb-8"
                   >
-                    <ShieldCheck size={16} className="text-amber-600" />
+                    <ShieldCheck size={14} className="shrink-0 text-amber-600" />
                     <div className="text-[11px] font-black uppercase tracking-[0.25em] text-amber-700">
                       Administrative Vault
                     </div>
@@ -277,7 +305,7 @@ export default function AdminDashboard() {
                     initial={{ y: 26, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.1 }}
-                    className="text-5xl md:text-7xl lg:text-8xl font-black leading-[0.9] text-gray-900 tracking-tighter"
+                    className="wrap-anywhere text-[1.75rem] min-[380px]:text-4xl sm:text-5xl md:text-7xl lg:text-8xl font-black leading-[0.95] sm:leading-[0.9] text-gray-900 tracking-tighter"
                   >
                     MANAGE YOUR <br />
                     <span className="text-amber-600">CLUB.</span>
@@ -301,7 +329,7 @@ export default function AdminDashboard() {
                   </motion.p>
                 </div>
 
-                <div className="w-full lg:w-[400px] grid grid-cols-2 gap-4">
+                <div className="w-full min-w-0 lg:w-[400px] grid grid-cols-1 min-[380px]:grid-cols-2 gap-2.5 sm:gap-4">
                   {[
                     {
                       label: "Total Members",
@@ -353,8 +381,20 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {partial && (
+            <div className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+              <XCircle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+              <p className="text-sm font-bold leading-relaxed text-amber-800">
+                {partial}{" "}
+                <button onClick={fetchData} className="underline hover:no-underline">
+                  Try again
+                </button>
+              </p>
+            </div>
+          )}
+
           {/* Tab Navigation */}
-          <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
+          <div className="flex min-w-0 gap-2 sm:gap-4 overflow-x-auto pb-2 no-scrollbar">
             {[
               {
                 id: "overview",
@@ -362,12 +402,11 @@ export default function AdminDashboard() {
                 icon: <LayoutDashboard size={18} />,
               },
               { id: "users", label: "Members", icon: <Users size={18} /> },
-              { id: "blogs", label: "Submissions", icon: <Clock size={18} /> },
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-black transition-all whitespace-nowrap ${
+                className={`flex shrink-0 items-center gap-2 rounded-2xl px-4 py-3 text-[13px] font-black transition-all whitespace-nowrap sm:gap-3 sm:px-8 sm:py-4 sm:text-base ${
                   activeTab === tab.id
                     ? "bg-amber-600 text-white shadow-xl shadow-amber-200 -translate-y-1"
                     : "bg-white/70 text-gray-500 hover:bg-white hover:text-amber-600 border border-white/50"
@@ -379,282 +418,224 @@ export default function AdminDashboard() {
             ))}
           </div>
 
-          <AnimatePresence mode="wait">
-            {activeTab === "overview" && (
-              <motion.div
-                key="overview"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="grid grid-cols-1 lg:grid-cols-2 gap-8"
-              >
-                {/* Approval Alerts Section */}
-                <div className="bg-white/70 backdrop-blur-xl border border-white/80 rounded-[3rem] p-8 md:p-10 shadow-xl relative overflow-hidden h-full">
-                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-2xl font-black flex items-center gap-3">
-                      <UserCheck className="text-amber-600" />
-                      Pending Approval
-                    </h2>
-                    <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs font-black">
-                      {pendingUsers.length} Requests
-                    </span>
-                  </div>
-
-                  <div className="space-y-4">
-                    {pendingUsers.length === 0 ? (
-                      <div className="text-center py-20 opacity-30">
-                        <CheckCircle size={48} className="mx-auto mb-4" />
-                        <p className="font-black text-sm uppercase tracking-widest">
-                          Queue Clear
-                        </p>
-                      </div>
-                    ) : (
-                      pendingUsers.map((u) => (
-                        <div
-                          key={u.id}
-                          className="bg-white/50 p-6 rounded-3xl border border-white flex items-center justify-between group hover:bg-white hover:shadow-xl transition-all"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center font-black text-amber-600 text-lg">
-                              {u.name.charAt(0)}
-                            </div>
-                            <div>
-                              <div className="font-black text-gray-900">
-                                {u.name}
-                              </div>
-                              <div className="text-xs text-gray-400 font-bold tracking-tight">
-                                {u.reg_no} • {u.domain}
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => handleApproveUser(u.id)}
-                            disabled={actionLoading === u.id}
-                            className="bg-amber-600 hover:bg-black text-white px-6 py-2.5 rounded-xl font-black text-sm transition-all disabled:opacity-50"
-                          >
-                            Approve
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {/* Submissions Section */}
-                <div className="bg-white/70 backdrop-blur-xl border border-white/80 rounded-[3rem] p-8 md:p-10 shadow-xl relative overflow-hidden h-full">
-                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-2xl font-black flex items-center gap-3">
-                      <Clock className="text-[#f5b800]" />
-                      Story Submissions
-                    </h2>
-                    <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs font-black">
-                      {blogs.length} Pending
-                    </span>
-                  </div>
-
-                  <div className="space-y-4">
-                    {blogs.length === 0 ? (
-                      <div className="text-center py-20 opacity-30">
-                        <FileText size={48} className="mx-auto mb-4" />
-                        <p className="font-black text-sm uppercase tracking-widest">
-                          No Submissions
-                        </p>
-                      </div>
-                    ) : (
-                      blogs.map((b) => (
-                        <div
-                          key={b.id}
-                          className="bg-white/50 p-6 rounded-3xl border border-white flex flex-col gap-4 group hover:bg-white hover:shadow-xl transition-all"
-                        >
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h3 className="font-black text-gray-900 leading-tight mb-1">
-                                {b.title}
-                              </h3>
-                              <p className="text-xs text-gray-400 font-bold">
-                                By {b.author.name}
-                              </p>
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => handleApproveBlog(b.id)}
-                                disabled={actionLoading === b.id}
-                                className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-all"
-                              >
-                                <CheckCircle size={20} />
-                              </button>
-                              <button
-                                onClick={() => handleRejectBlog(b.id)}
-                                disabled={actionLoading === b.id}
-                                className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all"
-                              >
-                                <XCircle size={20} />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {activeTab === "users" && (
-              <motion.div
-                key="users"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-white/70 backdrop-blur-xl border border-white/80 rounded-[3rem] p-8 md:p-10 shadow-xl"
-              >
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
-                  <h2 className="text-3xl font-black text-gray-900">
-                    Member Directory
+          {/* A plain conditional, not <AnimatePresence mode="wait">: that
+              held the tab you clicked back until the one you were leaving had
+              animated out, which on a phone reads as the tab being ignored.
+              See the same note in components/sections/BlogPlatform.tsx. */}
+          {activeTab === "overview" && (
+            <motion.div
+              key="overview"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18 }}
+              className="grid min-w-0 grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8"
+            >
+              {/* Approval Alerts Section */}
+              <div className="bg-white/90 border border-white/80 rounded-[3rem] p-8 md:p-10 shadow-xl relative overflow-hidden h-full">
+                <div className="flex items-center justify-between mb-8">
+                  <h2 className="text-2xl font-black flex items-center gap-3">
+                    <UserCheck className="text-amber-600" />
+                    Pending Approval
                   </h2>
-                  <div className="relative flex-1 max-w-md">
-                    <Search
-                      className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                      size={20}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Search by name, reg_no, domain..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-12 pr-4 py-4 bg-white/50 border border-white rounded-[1.5rem] focus:outline-none focus:ring-2 focus:ring-amber-200 transition-all font-medium"
-                    />
-                  </div>
+                  <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs font-black">
+                    {pendingUsers.length} Requests
+                  </span>
                 </div>
 
-                <div className="overflow-x-auto -mx-4 md:-mx-10 px-4 md:px-10">
-                  <table className="w-full text-left min-w-[500px] md:min-w-0">
-                    <thead>
-                      <tr className="text-[10px] font-black uppercase tracking-[0.25em] text-gray-400 border-b border-gray-100">
-                        <th className="pb-6 pr-4">Member Info</th>
-                        <th className="pb-6 pr-4 hidden md:table-cell">College Context</th>
-                        <th className="pb-6 pr-4">Status</th>
-                        <th className="pb-6 pr-4 hidden md:table-cell">Joined</th>
-                        <th className="pb-6 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {allUsers
-                        .filter(
-                          (u) =>
-                            u.name
-                              .toLowerCase()
-                              .includes(searchQuery.toLowerCase()) ||
-                            u.email
-                              .toLowerCase()
-                              .includes(searchQuery.toLowerCase()) ||
-                            u.reg_no?.includes(searchQuery),
-                        )
-                        .map((u) => (
-                          <tr
-                            key={u.id}
-                            className="group hover:bg-amber-50/30 transition-colors"
-                          >
-                            <td className="py-4 md:py-6 pr-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gray-100 flex items-center justify-center font-black text-gray-400 group-hover:bg-amber-100 group-hover:text-amber-600 transition-all text-sm md:text-base shrink-0">
-                                  {u.name.charAt(0)}
+                <div className="space-y-4">
+                  {pendingUsers.length === 0 ? (
+                    <div className="text-center py-20 opacity-30">
+                      <CheckCircle size={48} className="mx-auto mb-4" />
+                      <p className="font-black text-sm uppercase tracking-widest">
+                        Queue Clear
+                      </p>
+                    </div>
+                  ) : (
+                    pendingUsers.map((u) => (
+                      <div
+                        key={u.id}
+                        className="bg-white/50 p-6 rounded-3xl border border-white flex items-center justify-between group hover:bg-white hover:shadow-xl transition-all"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center font-black text-amber-600 text-lg">
+                            {u.name.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="font-black text-gray-900">
+                              {u.name}
+                            </div>
+                            <div className="text-xs text-gray-400 font-bold tracking-tight">
+                              {u.reg_no} • {u.domain}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleApproveUser(u.id)}
+                          disabled={actionLoading === u.id}
+                          className="bg-amber-600 hover:bg-black text-white px-6 py-2.5 rounded-xl font-black text-sm transition-all disabled:opacity-50"
+                        >
+                          Approve
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Story review now lives on the Manage page, so admins
+                  approve and reject in one place instead of two. */}
+              <div className="bg-white/70 border border-white/80 rounded-[3rem] p-8 md:p-10 shadow-xl relative overflow-hidden h-full flex flex-col items-start justify-center gap-4">
+                <h2 className="text-2xl font-black flex items-center gap-3">
+                  <Clock className="text-[#f5b800]" />
+                  Story Submissions
+                </h2>
+                <p className="text-gray-500 font-bold text-sm max-w-sm">
+                  {stats?.pendingBlogs
+                    ? `${stats.pendingBlogs} ${stats.pendingBlogs === 1 ? "story is" : "stories are"} waiting for review.`
+                    : "Nothing is waiting for review right now."}
+                </p>
+                <Link
+                  href="/admin/members?tab=review"
+                  className="rounded-2xl bg-gray-900 px-6 py-3 text-sm font-black text-white transition-colors hover:bg-[#f5b800]"
+                >
+                  Open Story Review
+                </Link>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === "users" && (
+            <motion.div
+              key="users"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18 }}
+              className="bg-white/90 border border-white/80 rounded-[3rem] p-8 md:p-10 shadow-xl"
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+                <h2 className="text-3xl font-black text-gray-900">
+                  Member Directory
+                </h2>
+                <div className="relative flex-1 max-w-md">
+                  <Search
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={20}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Search by name, reg_no, domain..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-12 pr-4 py-4 bg-white/50 border border-white rounded-[1.5rem] focus:outline-none focus:ring-2 focus:ring-amber-200 transition-all font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="-mx-3 overflow-x-auto px-3 md:-mx-10 md:px-10">
+                <table className="w-full text-left min-w-[440px] md:min-w-0">
+                  <thead>
+                    <tr className="text-[10px] font-black uppercase tracking-[0.25em] text-gray-400 border-b border-gray-100">
+                      <th className="pb-6 pr-4">Member Info</th>
+                      <th className="pb-6 pr-4 hidden md:table-cell">College Context</th>
+                      <th className="pb-6 pr-4">Status</th>
+                      <th className="pb-6 pr-4 hidden md:table-cell">Joined</th>
+                      <th className="pb-6 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {allUsers
+                      .filter(
+                        (u) =>
+                          u.name
+                            .toLowerCase()
+                            .includes(searchQuery.toLowerCase()) ||
+                          u.email
+                            .toLowerCase()
+                            .includes(searchQuery.toLowerCase()) ||
+                          u.reg_no?.includes(searchQuery),
+                      )
+                      .map((u) => (
+                        <tr
+                          key={u.id}
+                          className="group hover:bg-amber-50/30 transition-colors"
+                        >
+                          <td className="py-4 md:py-6 pr-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gray-100 flex items-center justify-center font-black text-gray-400 group-hover:bg-amber-100 group-hover:text-amber-600 transition-all text-sm md:text-base shrink-0">
+                                {u.name.charAt(0)}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-black text-gray-900 text-sm md:text-base truncate">
+                                  {u.name}
                                 </div>
-                                <div className="min-w-0">
-                                  <div className="font-black text-gray-900 text-sm md:text-base truncate">
-                                    {u.name}
-                                  </div>
-                                  <div className="text-[10px] md:text-xs text-gray-400 font-bold truncate">
-                                    {u.email}
-                                  </div>
+                                <div className="text-[10px] md:text-xs text-gray-400 font-bold truncate">
+                                  {u.email}
                                 </div>
                               </div>
-                            </td>
-                            <td className="py-4 md:py-6 pr-4 hidden md:table-cell">
-                              <div className="text-sm font-black text-gray-700">
-                                {u.reg_no}
-                              </div>
-                              <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-                                {u.domain} • Year {u.year}
-                              </div>
-                            </td>
-                            <td className="py-4 md:py-6 pr-4">
-                              <span
-                                className={`inline-block px-2 md:px-3 py-1 rounded-lg text-[9px] md:text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${
-                                  u.status === "approved"
-                                    ? "bg-emerald-50 text-emerald-600 border border-emerald-100"
-                                    : u.status === "rejected"
-                                      ? "bg-red-50 text-red-600 border border-red-100"
-                                      : "bg-amber-50 text-amber-600 border border-amber-100"
-                                }`}
+                            </div>
+                          </td>
+                          <td className="py-4 md:py-6 pr-4 hidden md:table-cell">
+                            <div className="text-sm font-black text-gray-700">
+                              {u.reg_no}
+                            </div>
+                            <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+                              {u.domain} • Year {u.year}
+                            </div>
+                          </td>
+                          <td className="py-4 md:py-6 pr-4">
+                            <span
+                              className={`inline-block px-2 md:px-3 py-1 rounded-lg text-[9px] md:text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${
+                                u.status === "approved"
+                                  ? "bg-emerald-50 text-emerald-600 border border-emerald-100"
+                                  : u.status === "rejected"
+                                    ? "bg-red-50 text-red-600 border border-red-100"
+                                    : "bg-amber-50 text-amber-600 border border-amber-100"
+                              }`}
+                            >
+                              {u.status === "pending_review" ? "Review" : u.status}
+                            </span>
+                          </td>
+                          <td className="py-4 md:py-6 pr-4 text-xs md:text-sm text-gray-500 font-medium hidden md:table-cell">
+                            {new Date(
+                              u.created_at || "",
+                            ).toLocaleDateString()}
+                          </td>
+                          <td className="py-4 md:py-6 text-right">
+                            {u.status === "pending" && (
+                              <button
+                                onClick={() => handleApproveUser(u.id)}
+                                className="text-amber-600 font-black text-[10px] md:text-xs hover:underline uppercase tracking-widest whitespace-nowrap"
                               >
-                                {u.status === "pending_review" ? "Review" : u.status}
-                              </span>
-                            </td>
-                            <td className="py-4 md:py-6 pr-4 text-xs md:text-sm text-gray-500 font-medium hidden md:table-cell">
-                              {new Date(
-                                u.created_at || "",
-                              ).toLocaleDateString()}
-                            </td>
-                            <td className="py-4 md:py-6 text-right">
-                              {u.status === "pending" && (
-                                <button
-                                  onClick={() => handleApproveUser(u.id)}
-                                  className="text-amber-600 font-black text-[10px] md:text-xs hover:underline uppercase tracking-widest whitespace-nowrap"
-                                >
-                                  Approve
-                                </button>
-                              )}
-                              {u.status === "approved" && u.role === "member" && (
-                                <button
-                                  onClick={() => handlePromoteUser(u.id)}
-                                  disabled={actionLoading === u.id}
-                                  className="text-blue-600 font-black text-[10px] md:text-xs hover:underline uppercase tracking-widest whitespace-nowrap disabled:opacity-50"
-                                >
-                                  {actionLoading === u.id ? "..." : "Promote"}
-                                </button>
-                              )}
-                              {u.status === "approved" && u.role === "admin" && !u.is_super_admin && (
-                                <button
-                                  onClick={() => handleDemoteUser(u.id)}
-                                  disabled={actionLoading === u.id}
-                                  className="text-red-500 font-black text-[10px] md:text-xs hover:underline uppercase tracking-widest whitespace-nowrap disabled:opacity-50"
-                                >
-                                  {actionLoading === u.id ? "..." : "Demote"}
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </motion.div>
-            )}
+                                Approve
+                              </button>
+                            )}
+                            {isSuperAdmin && u.status === "approved" && u.role === "member" && (
+                              <button
+                                onClick={() => handlePromoteUser(u.id)}
+                                disabled={actionLoading === u.id}
+                                className="text-blue-600 font-black text-[10px] md:text-xs hover:underline uppercase tracking-widest whitespace-nowrap disabled:opacity-50"
+                              >
+                                {actionLoading === u.id ? "..." : "Promote"}
+                              </button>
+                            )}
+                            {isSuperAdmin && u.status === "approved" && u.role === "admin" && !u.is_super_admin && (
+                              <button
+                                onClick={() => handleDemoteUser(u.id)}
+                                disabled={actionLoading === u.id}
+                                className="text-red-500 font-black text-[10px] md:text-xs hover:underline uppercase tracking-widest whitespace-nowrap disabled:opacity-50"
+                              >
+                                {actionLoading === u.id ? "..." : "Demote"}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          )}
 
-            {activeTab === "blogs" && (
-              <motion.div
-                key="blogs"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="w-full"
-              >
-                <AdminPipelineSection
-                  blogs={blogs.filter((b) => b.status === "pending_review")}
-                  setBlogs={setBlogs}
-                  onAction={(id) => {
-                    // Update stats locally when action happens in pipeline
-                    setStats((prev: any) => ({
-                      ...prev,
-                      pendingBlogs: Math.max(0, (prev?.pendingBlogs || 1) - 1),
-                    }));
-                  }}
-                  onApproveSuccess={() => {
-                    fetchData();
-                  }}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       </main>
 

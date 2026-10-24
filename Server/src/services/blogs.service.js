@@ -1,10 +1,58 @@
 import prisma from "../db/db.js";
+import { AppError } from "../utils/AppError.js";
+
+/**
+ * Length limits for a post. Enforced here as well as in the browser, so they
+ * cannot be skipped by calling the API directly. Change the numbers in one
+ * place: client/lib/blogLimits.ts mirrors them for the live counters.
+ *
+ * Only the content has a floor worth enforcing - a post shorter than a short
+ * paragraph is not a story. The title is capped so it still fits a card and a
+ * link preview, but has no minimum beyond "not empty".
+ */
+export const BLOG_LIMITS = {
+  title: { min: 1, max: 70 },
+  subtitle: { min: 0, max: 200 },
+  content: { min: 100, max: 20000 },
+};
+
+function clean(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/** Throws a readable error when a field is too short or too long. */
+function validateBlogPayload(payload) {
+  const title = clean(payload.title);
+  const subtitle = clean(payload.subtitle);
+  const content = clean(payload.content);
+
+  if (title.length < BLOG_LIMITS.title.min) {
+    throw new AppError("Please give your post a title", 400, "TITLE_TOO_SHORT");
+  }
+  if (title.length > BLOG_LIMITS.title.max) {
+    throw new AppError(`Title must be ${BLOG_LIMITS.title.max} characters or fewer`, 400, "TITLE_TOO_LONG");
+  }
+  if (subtitle.length > BLOG_LIMITS.subtitle.max) {
+    throw new AppError(`Subtitle must be ${BLOG_LIMITS.subtitle.max} characters or fewer`, 400, "SUBTITLE_TOO_LONG");
+  }
+  if (content.length < BLOG_LIMITS.content.min) {
+    throw new AppError(`Your post must be at least ${BLOG_LIMITS.content.min} characters`, 400, "CONTENT_TOO_SHORT");
+  }
+  if (content.length > BLOG_LIMITS.content.max) {
+    throw new AppError(`Your post must be ${BLOG_LIMITS.content.max} characters or fewer`, 400, "CONTENT_TOO_LONG");
+  }
+
+  return { title, subtitle: subtitle || null, content };
+}
 
 export async function createDraft(authorId, payload) {
+  const { title, subtitle, content } = validateBlogPayload(payload);
+
   const blog = await prisma.blog.create({
     data: {
-      title: payload.title,
-      content: payload.content,
+      title,
+      subtitle,
+      content,
       image: payload.image || null,
       links: payload.links || null,
       author_id: authorId,
@@ -25,11 +73,14 @@ export async function editDraft(authorId, id, payload) {
   if (blog.status === "published") throw new AppError("Cannot edit published blogs", 400, "BAD_REQUEST");
   if (blog.status === "pending_review") throw new AppError("Cannot edit blog while under review", 400, "BAD_REQUEST");
 
+  const { title, subtitle, content } = validateBlogPayload(payload);
+
   const updated = await prisma.blog.update({
     where: { id },
     data: {
-      title: payload.title,
-      content: payload.content,
+      title,
+      subtitle,
+      content,
       image: payload.image || blog.image,
       links: payload.links || null,
       status: blog.status === "rejected" ? "draft" : blog.status
@@ -69,6 +120,7 @@ export async function getByAuthor(authorId) {
     select: {
       id: true,
       title: true,
+      subtitle: true,
       content: true,
       image: true,
       links: true,
@@ -86,9 +138,26 @@ export async function getByAuthor(authorId) {
   });
 }
 
-export async function getPublishedBlogs(userId = null) {
+export const BLOG_PAGE_SIZE = 9;
+export const BLOG_PAGE_SIZE_MAX = 50;
+
+/**
+ * Published blogs, newest first, one page at a time.
+ *
+ * Returning every row stops scaling the moment the club has a few hundred
+ * posts: the payload, the JSON parse and the render all grow without bound.
+ */
+export async function getPublishedBlogs(userId = null, { page = 1, limit = BLOG_PAGE_SIZE } = {}) {
+  const safeLimit = Math.min(Math.max(parseInt(limit, 10) || BLOG_PAGE_SIZE, 1), BLOG_PAGE_SIZE_MAX);
+  const safePage = Math.max(parseInt(page, 10) || 1, 1);
+  const skip = (safePage - 1) * safeLimit;
+
+  const total = await prisma.blog.count({ where: { status: "published" } });
+
   const blogs = await prisma.blog.findMany({
     where: { status: "published" },
+    skip,
+    take: safeLimit,
     include: {
       author: {
         select: {
@@ -107,7 +176,17 @@ export async function getPublishedBlogs(userId = null) {
     orderBy: { created_at: 'desc' }
   });
 
-  if (!userId) return blogs.map(b => ({ ...b, userLiked: false }));
+  const pagination = {
+    page: safePage,
+    limit: safeLimit,
+    total,
+    totalPages: Math.max(Math.ceil(total / safeLimit), 1),
+    hasMore: skip + blogs.length < total,
+  };
+
+  if (!userId) {
+    return { blogs: blogs.map(b => ({ ...b, userLiked: false })), pagination };
+  }
 
   // Efficiently check likes for all fetched blogs
   const userLikes = await prisma.like.findMany({
@@ -120,10 +199,13 @@ export async function getPublishedBlogs(userId = null) {
 
   const likedBlogIds = new Set(userLikes.map(l => l.blog_id));
 
-  return blogs.map(b => ({
-    ...b,
-    userLiked: likedBlogIds.has(b.id)
-  }));
+  return {
+    blogs: blogs.map(b => ({
+      ...b,
+      userLiked: likedBlogIds.has(b.id),
+    })),
+    pagination,
+  };
 }
 
 export async function getBlogById(id, userId = null) {

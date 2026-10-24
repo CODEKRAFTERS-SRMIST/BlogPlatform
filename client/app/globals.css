@@ -34,3 +34,65 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/*
+ * The mobile bottom nav is fixed on top of the page, so a `sticky bottom-0`
+ * action bar sits underneath it and is never visible on a phone. This stops
+ * the bar just above the nav, and drops back to the viewport edge on desktop
+ * where the nav becomes a left sidebar instead.
+ */
+.sticky-above-mobile-nav {
+  position: sticky;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 1024px) {
+  .sticky-above-mobile-nav {
+    bottom: 0;
+  }
+}
+
+/*
+ * Text somebody typed as one unbroken run ("ffffffff...") has no space to
+ * wrap at, so it runs straight out of its card. line-clamp does not help:
+ * that limits how many lines show, not how wide a single word may get.
+ * Everything that renders user-written text gets this.
+ */
+.wrap-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/*
+ * The mobile bottom nav is `fixed`, so it is not part of the page flow and
+ * the last rows of any page end up hidden behind it. Every page body gets
+ * this clearance; it collapses on desktop where the nav becomes a floating
+ * left sidebar and no longer covers anything.
+ */
+.pb-mobile-nav {
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 1024px) {
+  .pb-mobile-nav {
+    padding-bottom: 2rem;
+  }
+}
+
+/*
+ * Nothing in the app is wide enough to justify sideways scrolling, and a
+ * single over-wide element (a long title, a table) otherwise lets the whole
+ * page slide. Containers that genuinely scroll sideways set their own
+ * `overflow-x: auto` and are unaffected.
+ *
+ * `clip`, not `hidden`. Setting overflow-x: hidden here turns the document
+ * into a scroll container, and `position: sticky` does not work inside one -
+ * the landing page's pinned panel silently stopped pinning, so its text slid
+ * off the top of the screen and the whole section scrolled past empty.
+ * `clip` cuts the overflow without creating that scroll container.
+ */
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}

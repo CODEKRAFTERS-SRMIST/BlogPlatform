@@ -1,4 +1,5 @@
 import prisma from "../db/db.js";
+import { AppError } from "../utils/AppError.js";
 
 export async function getDashboardStats() {
   const [totalUsers, pendingUsers, approvedUsers, totalBlogs, pendingBlogs, totalLikes, totalComments] = await Promise.all([
@@ -59,8 +60,8 @@ export async function approveUser(id) {
 
 export async function promoteToAdmin(userId) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new Error('User not found');
-  if (user.is_super_admin) throw new Error('User is already a super admin');
+  if (!user) throw new AppError('User not found', 404, 'NOT_FOUND');
+  if (user.is_super_admin) throw new AppError('User is already a super admin', 400, 'ALREADY_SUPER_ADMIN');
 
   const updated = await prisma.user.update({
     where: { id: userId },

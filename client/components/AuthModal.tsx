@@ -2,8 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Mail, Lock, User, GraduationCap, Briefcase, ChevronRight, Settings, CheckCircle, Clock } from 'lucide-react';
-import { authApi, devApi } from '@/lib/api';
+import { X, Mail, Lock, User, GraduationCap, Briefcase, ChevronRight, Settings, CheckCircle, Clock, Eye, EyeOff } from 'lucide-react';
+import { authApi, devApi, handleApiError } from '@/lib/api';
+import { publishAuthUser } from '@/lib/useAuth';
+import {
+  validateEmail,
+  validateRegNo,
+  validateDomain,
+  normalizeEmail,
+  normalizeRegNo,
+  DOMAIN_OPTIONS,
+} from '@/lib/validators';
+import { toast } from 'react-hot-toast';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -15,6 +25,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [showDevPanel, setShowDevPanel] = useState(false);
   const [devUsers, setDevUsers] = useState<any[]>([]);
   const [devLoading, setDevLoading] = useState(false);
@@ -67,18 +78,19 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         email: formData.email,
         password: formData.password,
       });
+      publishAuthUser(response.user as any);
 
-      if (response.user) {
+      try {
+        localStorage.setItem('auth_changed', String(Date.now()));
+      } catch {
+        // tab sync is optional
       }
 
       onSuccess();
       onClose();
     } catch (err: any) {
-      const errorMsg = err.response?.data?.error || 
-                       err.response?.data?.message || 
-                       err.message || 
-                       'Login failed';
-      setError(typeof errorMsg === 'string' ? errorMsg : 'Login failed');
+      const errorMsg = handleApiError(err);
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -87,19 +99,34 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    const checks = [
+      validateEmail(formData.email),
+      validateRegNo(formData.regNo),
+      validateDomain(formData.department),
+    ];
+    const failed = checks.find((c) => !c.valid);
+    if (failed) {
+      const errorMsg = failed.error || 'Please check the details you entered';
+      setError(errorMsg);
+      toast.error(errorMsg);
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await authApi.signup(formData as any);
+      await authApi.signup({
+        ...formData,
+        email: normalizeEmail(formData.email),
+        regNo: normalizeRegNo(formData.regNo),
+      } as any);
       setMode('login');
       setError('Registration successful! Use the dev panel below to approve your account.');
       if (showDevPanel) fetchDevUsers();
     } catch (err: any) {
-      const errorMsg = err.response?.data?.error?.message || 
-                       err.response?.data?.error || 
-                       err.message || 
-                       'Signup failed';
-      setError(typeof errorMsg === 'string' ? errorMsg : 'Signup failed');
+      const errorMsg = handleApiError(err);
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -199,13 +226,30 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             )}
           </AnimatePresence>
 
-          <form onSubmit={mode === 'login' ? handleLogin : handleSignup} className="space-y-4">
+          <form method="post" onSubmit={mode === 'login' ? handleLogin : handleSignup} className="space-y-4">
             {mode === 'signup' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <InputGroup icon={<User size={18}/>} name="name" placeholder="Full Name" value={formData.name} onChange={handleChange} />
                 <InputGroup icon={<Briefcase size={18}/>} name="username" placeholder="Username" value={formData.username} onChange={handleChange} />
                 <InputGroup icon={<GraduationCap size={18}/>} name="regNo" placeholder="Registration No" value={formData.regNo} onChange={handleChange} />
-                <InputGroup icon={<Settings size={18}/>} name="department" placeholder="Department" value={formData.department} onChange={handleChange} />
+                <div className="relative group">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#f5b800] transition-colors">
+                    <Settings size={18} />
+                  </div>
+                  <select
+                    name="department"
+                    value={formData.department}
+                    onChange={handleChange}
+                    className={`w-full bg-white/5 border border-white/10 pl-12 pr-4 py-3.5 rounded-2xl focus:outline-none focus:border-[#f5b800] focus:ring-1 focus:ring-[#f5b800] transition-all appearance-none text-sm ${formData.department ? 'text-white' : 'text-white/20'}`}
+                  >
+                    <option value="" disabled className="text-gray-900">Department</option>
+                    {DOMAIN_OPTIONS.map((option) => (
+                      <option key={option} value={option} className="text-gray-900">
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="col-span-1 sm:col-span-2 relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#f5b800] transition-colors">
                     <Clock size={18} />
@@ -223,7 +267,24 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             )}
 
             <InputGroup icon={<Mail size={18}/>} type="email" name="email" placeholder="Email Address" value={formData.email} onChange={handleChange} />
-            <InputGroup icon={<Lock size={18}/>} type="password" name="password" placeholder="Password" value={formData.password} onChange={handleChange} />
+            <InputGroup 
+              icon={<Lock size={18}/>} 
+              type={showPassword ? "text" : "password"} 
+              name="password" 
+              placeholder="Password" 
+              value={formData.password} 
+              onChange={handleChange} 
+              rightElement={
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-white/40 hover:text-white transition-colors p-1"
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              }
+            />
 
             <motion.button
               type="submit"
@@ -307,7 +368,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   );
 }
 
-function InputGroup({ icon, type = "text", ...props }: any) {
+function InputGroup({ icon, type = "text", rightElement, ...props }: any) {
   return (
     <div className="relative group">
       <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#f5b800] transition-colors">
@@ -315,9 +376,14 @@ function InputGroup({ icon, type = "text", ...props }: any) {
       </div>
       <input
         type={type}
-        className="w-full bg-white/5 border border-white/10 text-white pl-12 pr-4 py-3.5 rounded-2xl focus:outline-none focus:border-[#f5b800] focus:ring-1 focus:ring-[#f5b800] transition-all placeholder:text-white/20 text-sm"
+        className={`w-full bg-white/5 border border-white/10 text-white pl-12 ${rightElement ? 'pr-11' : 'pr-4'} py-3.5 rounded-2xl focus:outline-none focus:border-[#f5b800] focus:ring-1 focus:ring-[#f5b800] transition-all placeholder:text-white/20 text-sm`}
         {...props}
       />
+      {rightElement && (
+        <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
+          {rightElement}
+        </div>
+      )}
     </div>
   );
 }
