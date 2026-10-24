@@ -497,7 +497,11 @@ export default function BlogPlatform() {
         activeSection={activeSection}
         onSectionChange={(section) => {
           if (section === "admin") {
-            window.location.href = "/admin/dashboard";
+            // router.push, not window.location: assigning location threw the
+            // whole app away and rebuilt it - bundle, React tree, session
+            // check - for a move between two pages of the same app. The
+            // Manage button beside it already did it this way.
+            router.push("/admin/dashboard");
           } else {
             setActiveSection(section);
           }

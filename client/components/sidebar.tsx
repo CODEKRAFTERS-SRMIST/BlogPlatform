@@ -51,7 +51,10 @@ const Sidebar: React.FC<SidebarProps> = ({
    * no-op in `next dev`, where routes are compiled on demand.
    */
   useEffect(() => {
-    if (isAdmin) router.prefetch("/admin/members");
+    if (isAdmin) {
+      router.prefetch("/admin/members");
+      router.prefetch("/admin/dashboard");
+    }
   }, [isAdmin, router]);
 
   const navItems = [

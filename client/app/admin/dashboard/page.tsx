@@ -21,7 +21,7 @@ import {
   LayoutDashboard,
   Heart,
 } from "lucide-react";
-import { adminApi, handleApiError, User, Post } from "@/lib/api";
+import { adminApi, handleApiError, User } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/sidebar";
 import { GridPattern } from "@/components/background";
@@ -37,7 +37,6 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<any>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [pendingUsers, setPendingUsers] = useState<User[]>([]);
-  const [blogs, setBlogs] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"overview" | "users">(
     "overview",
@@ -60,7 +59,12 @@ export default function AdminDashboard() {
       }
       fetchData();
     }
-  }, [authLoading, isLoggedIn, user, router]);
+    // user?.id rather than user: the session store hands back a fresh
+    // object every time it re-checks who is signed in, which it does on
+    // every tab focus. Depending on the object meant React saw a change
+    // that had not happened and re-ran all of this - four requests - each
+    // time you came back to the tab.
+  }, [authLoading, isLoggedIn, user?.id, user?.role, user?.is_super_admin, router]);
 
   /**
    * Loads the four dashboard feeds independently of one another.
@@ -87,23 +91,20 @@ export default function AdminDashboard() {
         ),
       ]);
 
-    const [statsRes, usersRes, pendingRes, blogsRes] = await Promise.allSettled([
+    const [statsRes, usersRes, pendingRes] = await Promise.allSettled([
       withTimeout(adminApi.getStats()),
       withTimeout(adminApi.getAllUsers()),
       withTimeout(adminApi.getPendingUsers()),
-      withTimeout(adminApi.getBlogs("pending_review")),
     ]);
 
     if (statsRes.status === "fulfilled") setStats(statsRes.value);
     if (usersRes.status === "fulfilled") setAllUsers(usersRes.value || []);
     if (pendingRes.status === "fulfilled") setPendingUsers(pendingRes.value || []);
-    if (blogsRes.status === "fulfilled") setBlogs(blogsRes.value || []);
 
     const results: Array<[string, PromiseSettledResult<any>]> = [
       ["statistics", statsRes],
       ["the member list", usersRes],
       ["pending registrations", pendingRes],
-      ["stories awaiting review", blogsRes],
     ];
     const failures = results.filter(([, r]) => r.status === "rejected");
 
@@ -170,43 +171,6 @@ export default function AdminDashboard() {
       const refreshedUsers = await adminApi.getAllUsers();
       setAllUsers(refreshedUsers);
       toast.success("User approved successfully!");
-    } catch (err) {
-      toast.error(handleApiError(err));
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleApproveBlog = async (blogId: string) => {
-    setActionLoading(blogId);
-    try {
-      await adminApi.approveBlog(blogId);
-      setBlogs((prev) => prev.filter((b) => b.id !== blogId));
-      setStats((prev: any) => ({
-        ...prev,
-        pendingBlogs: (prev?.pendingBlogs || 1) - 1,
-      }));
-      toast.success("Blog approved and published!");
-    } catch (err) {
-      toast.error(handleApiError(err));
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleRejectBlog = async (blogId: string) => {
-    const reason = prompt("Enter rejection reason:");
-    if (!reason) return;
-
-    setActionLoading(blogId);
-    try {
-      await adminApi.rejectBlog(blogId, reason);
-      setBlogs((prev) => prev.filter((b) => b.id !== blogId));
-      setStats((prev: any) => ({
-        ...prev,
-        pendingBlogs: (prev?.pendingBlogs || 1) - 1,
-      }));
-      toast.success("Blog rejected.");
     } catch (err) {
       toast.error(handleApiError(err));
     } finally {
