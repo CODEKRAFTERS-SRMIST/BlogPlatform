@@ -86,6 +86,9 @@ model Blog {
 
   @@index([author_id])
   @@index([status])
+  // The public feed reads published posts, newest first, a page at a time.
+  // Neither single-column index can serve that in one pass; this can.
+  @@index([status, created_at])
 }
 
 model Like {

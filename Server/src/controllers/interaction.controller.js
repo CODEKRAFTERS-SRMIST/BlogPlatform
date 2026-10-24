@@ -61,5 +61,8 @@ export const getPublicUserStats = asyncHandler(async (req, res) => {
 
 export const getPlatformStats = asyncHandler(async (req, res) => {
   const stats = await interactionService.getPlatformStats();
+  // Public, slow-moving and identical for everybody, so let the browser and
+  // any CDN in front of us hold it for the same minute the server does.
+  res.set("Cache-Control", "public, max-age=60");
   res.json({ success: true, data: stats });
 });
