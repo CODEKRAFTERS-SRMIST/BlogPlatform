@@ -8,6 +8,7 @@ import PostCard from './PostCard';
 import BlogDetailModal from './BlogDetailModal';
 import { blogApi, interactionApi, handleApiError, Pagination } from '@/lib/api';
 import { mapPost } from '@/lib/mapPost';
+import { useAuth } from '@/lib/useAuth';
 import { toast } from 'react-hot-toast';
 
 const containerVariants: Variants = {
@@ -24,6 +25,7 @@ const itemVariants: Variants = {
 };
 
 export default function BlogFeed() {
+  const { isLoggedIn, loading: authLoading } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
@@ -63,33 +65,155 @@ export default function BlogFeed() {
     }
   }, []);
 
+  /*
+   * Waits for the session before asking for the feed.
+   *
+   * /blogs/public takes an optional session: with a valid one it marks the
+   * stories you have already liked, and without one it answers as though you
+   * were a stranger - a 200, not a 401. So an access token that had quietly
+   * expired produced a feed of white hearts with nothing anywhere to notice
+   * it, while the like button itself still worked, because that endpoint
+   * does answer 401 and the token gets renewed on the way through. Tapping a
+   * heart you had already given then took the like away.
+   *
+   * useAuth settles first, and renewing the token is part of settling, so by
+   * the time this runs the request carries a session that is actually valid,
+   * or none at all.
+   */
   useEffect(() => {
+    if (authLoading) return;
     loadPage(1, false);
-  }, [loadPage]);
+  }, [loadPage, authLoading, isLoggedIn]);
 
-  // Open the article named by a shared link (/blogs?post=<id>) once the feed loads
+  /*
+   * Opening a story puts its address in the bar without navigating.
+   *
+   * pushState is not a route change: nothing is fetched, nothing re-renders,
+   * and the panel opens from the story already in memory. The feed stays as
+   * quick as it was, the Share button always has a real link to hand out,
+   * and the back button lands on the feed instead of leaving the site.
+   */
+  const openPost = useCallback((post: Post) => {
+    setSelectedPost(post);
+    if (typeof window === 'undefined') return;
+    try {
+      window.history.pushState({ storyId: post.id }, '', '/blogs/' + post.id);
+    } catch {
+      // Some embedded browsers refuse history writes; opening still works.
+    }
+  }, []);
+
+  const closePost = useCallback(() => {
+    setSelectedPost(null);
+    if (typeof window === 'undefined') return;
+    // Only step back if we were the ones who pushed, or a visitor who
+    // arrived here directly would be sent back out of the site.
+    if (window.history.state && window.history.state.storyId) {
+      window.history.back();
+    }
+  }, []);
+
+  // The back button closes the panel rather than leaving the feed.
   useEffect(() => {
-    if (hasOpenedSharedPost.current || posts.length === 0) return;
+    const onPop = () => {
+      const state = window.history.state;
+      if (!state || !state.storyId) setSelectedPost(null);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  /*
+   * Opens the story named by an older share link, /blogs?post=<id>.
+   *
+   * New links are /blogs/<id> and have a page of their own. These are the
+   * ones already sent to people, and they used to work only by accident: the
+   * story had to be among the nine the feed had loaded, so a link to
+   * anything older opened the feed and quietly did nothing. Anything not on
+   * the page is fetched by id now.
+   */
+  useEffect(() => {
+    if (hasOpenedSharedPost.current || loading) return;
     if (typeof window === 'undefined') return;
 
     const sharedId = new URLSearchParams(window.location.search).get('post');
     if (!sharedId) return;
-
     hasOpenedSharedPost.current = true;
-    const shared = posts.find((p) => p.id === sharedId);
-    if (shared) setSelectedPost(shared);
-  }, [posts]);
+
+    const alreadyHere = posts.find((p) => p.id === sharedId);
+    if (alreadyHere) {
+      openPost(alreadyHere);
+      return;
+    }
+
+    let cancelled = false;
+    blogApi
+      .getPostById(sharedId)
+      .then((raw) => {
+        if (!cancelled && raw) openPost(mapPost(raw));
+      })
+      .catch(() => {
+        if (!cancelled) toast.error('That story is no longer available.');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [posts, loading, openPost]);
 
   const handleLike = async (id: string) => {
+    /*
+     * Asked before firing. A signed-out visitor tapping a heart used to send
+     * a request that could only answer 401, which the API layer met by
+     * trying to renew a session that was never there and then redirecting to
+     * the login page - so a guest reading the feed was thrown out of it with
+     * no explanation at all.
+     */
+    if (!isLoggedIn) {
+      toast('Sign in to like this story');
+      return;
+    }
+
+    const wasLiked = likedPosts.has(id);
+    const previousCount = posts.find((p) => p.id === id)?.likes ?? 0;
+
+    // Moves on the tap, then settles on whatever the server says.
+    setLikedPosts((prev) => {
+      const next = new Set(prev);
+      if (wasLiked) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setPosts((prev) =>
+      prev.map((post) =>
+        post.id === id
+          ? { ...post, likes: Math.max(post.likes + (wasLiked ? -1 : 1), 0) }
+          : post,
+      ),
+    );
+
     try {
       const result = await interactionApi.toggleLike(id);
-      const newLiked = new Set(likedPosts);
-      if (result.liked) newLiked.add(id);
-      else newLiked.delete(id);
-      setLikedPosts(newLiked);
-      setPosts(prev => prev.map(p => p.id === id ? { ...p, likes: result.count } : p));
+      setLikedPosts((prev) => {
+        const next = new Set(prev);
+        if (result.liked) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+      setPosts((prev) =>
+        prev.map((post) => (post.id === id ? { ...post, likes: result.count } : post)),
+      );
     } catch (err) {
-      console.error('Failed to like:', err);
+      setLikedPosts((prev) => {
+        const next = new Set(prev);
+        if (wasLiked) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+      setPosts((prev) =>
+        prev.map((post) => (post.id === id ? { ...post, likes: previousCount } : post)),
+      );
+      toast.error(handleApiError(err));
     }
   };
 
@@ -146,7 +270,7 @@ export default function BlogFeed() {
                   post={post}
                   isLiked={likedPosts.has(post.id)}
                   onLike={handleLike}
-                  onClick={() => setSelectedPost(post)}
+                  onClick={() => openPost(post)}
                 />
               </motion.div>
             ))}
@@ -191,7 +315,7 @@ export default function BlogFeed() {
           <BlogDetailModal
             key={selectedPost.id}
             selectedPost={selectedPost}
-            setSelectedPost={setSelectedPost}
+            setSelectedPost={closePost}
             onLike={() => handleLike(selectedPost.id)}
             isLiked={likedPosts.has(selectedPost.id)}
           />

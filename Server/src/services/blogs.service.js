@@ -168,11 +168,21 @@ export async function getPublishedBlogs(userId = null, { page = 1, limit = BLOG_
     skip,
     take: safeLimit,
     include: {
+      /*
+       * Name only. The email was travelling to every browser that asked for
+       * the feed - invisible on screen, plainly readable in the response -
+       * on an endpoint that needs no session at all. Nothing public has ever
+       * rendered it, and with a server-rendered story page it would be baked
+       * into the HTML for anyone to read.
+       *
+       * The admin review endpoint still returns it (admin.controller.js):
+       * that one is behind requireRole and a reviewer needs to know who
+       * wrote the thing.
+       */
       author: {
         select: {
           id: true,
-          name: true,
-          email: true
+          name: true
         }
       },
       _count: {
@@ -221,11 +231,21 @@ export async function getBlogById(id, userId = null) {
   const blog = await prisma.blog.findUnique({
     where: { id },
     include: {
+      /*
+       * Name only. The email was travelling to every browser that asked for
+       * the feed - invisible on screen, plainly readable in the response -
+       * on an endpoint that needs no session at all. Nothing public has ever
+       * rendered it, and with a server-rendered story page it would be baked
+       * into the HTML for anyone to read.
+       *
+       * The admin review endpoint still returns it (admin.controller.js):
+       * that one is behind requireRole and a reviewer needs to know who
+       * wrote the thing.
+       */
       author: {
         select: {
           id: true,
-          name: true,
-          email: true
+          name: true
         }
       },
       _count: {

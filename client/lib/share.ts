@@ -13,13 +13,21 @@ function getOrigin(): string {
 }
 
 /**
- * Public URL for a single post. The feed at /blogs reads the `post` query
- * param on load and opens that article, so the link lands on the story
- * itself instead of the top of the feed.
+ * Public URL for a single story.
+ *
+ * This used to be /blogs?post=<id>, which asked the feed to find the story
+ * among the page it had already loaded - so a link to anything outside the
+ * newest nine opened the feed and quietly did nothing. /blogs/<id> is a page
+ * of its own: it works for any story, at any age, and it carries the title
+ * and cover image that make a shared link unfold into a preview card instead
+ * of arriving as a bare URL.
+ *
+ * Every share path goes through here - WhatsApp, the Instagram caption, the
+ * native share sheet, copy link - so they all moved together.
  */
 export function getPostUrl(postId: string): string {
   const origin = getOrigin();
-  return postId ? `${origin}/blogs?post=${encodeURIComponent(postId)}` : `${origin}/blogs`;
+  return postId ? `${origin}/blogs/${encodeURIComponent(postId)}` : `${origin}/blogs`;
 }
 
 /** Plain-text excerpt, with markdown punctuation stripped out. */
