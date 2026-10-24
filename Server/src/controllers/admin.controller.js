@@ -27,6 +27,13 @@ export const approveUser = asyncHandler(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+export const rejectUser = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await adminService.rejectUser(id, { actingUserId: req.user?.id });
+  logAuditEvent({ userId: req.user?.id, action: AuditActions.USER_REJECT, entity: 'User', entityId: id, ip: req.ip });
+  res.json({ success: true, data: result });
+});
+
 export const getBlogs = asyncHandler(async (req, res) => {
   const { status } = req.query;
   const where = status ? { status } : undefined;

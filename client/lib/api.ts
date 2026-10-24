@@ -437,6 +437,15 @@ export const adminApi = {
     return response.data?.data || response.data;
   },
 
+  /**
+   * Turns a registration down. Reversible - approveUser puts a rejected
+   * account back, so a misclick is not permanent.
+   */
+  rejectUser: async (id: string): Promise<any> => {
+    const response = await apiClient.patch(`/admin/users/${id}/reject`);
+    return response.data?.data || response.data;
+  },
+
   promoteUser: async (id: string): Promise<any> => {
     const response = await apiClient.patch(`/admin/users/${id}/promote`);
     return response.data?.data || response.data;

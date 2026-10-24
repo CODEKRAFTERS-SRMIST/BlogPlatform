@@ -13,6 +13,7 @@ import {
   Search,
   ArrowLeft,
   CheckCircle,
+  XCircle,
   ShieldAlert,
   AlertTriangle,
   User,
@@ -53,7 +54,7 @@ export default function AdminMembersPage() {
   // Confirmation Modal state
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
-    type: "promote" | "demote" | "approve";
+    type: "promote" | "demote" | "approve" | "reject";
     user: ApiUser | null;
   }>({
     isOpen: false,
@@ -149,6 +150,29 @@ export default function AdminMembersPage() {
       setConfirmModal({ isOpen: false, type: "approve", user: null });
     } catch (err: any) {
       toast.error(handleApiError(err) || "Failed to approve member");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  /*
+   * Turning a registration down.
+   *
+   * Reversible on purpose: Approve still works on a rejected account, so the
+   * row keeps its Approve button afterwards and a misclick costs one more
+   * click rather than a database edit.
+   */
+  const handleReject = async (userId: string) => {
+    try {
+      setActionLoading(userId);
+      await adminApi.rejectUser(userId);
+      toast.success("Registration rejected. They have been signed out.");
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, status: "rejected" } : u))
+      );
+      setConfirmModal({ isOpen: false, type: "reject", user: null });
+    } catch (err: any) {
+      toast.error(handleApiError(err) || "Failed to reject registration");
     } finally {
       setActionLoading(null);
     }
@@ -427,6 +451,7 @@ export default function AdminMembersPage() {
                     const isAdminUser = u.role === "admin" || isSuper;
                     const isApproved = u.status === "approved";
                     const isPending = u.status === "pending";
+                    const isRejected = u.status === "rejected";
 
                     return (
                       <tr
@@ -531,6 +556,42 @@ export default function AdminMembersPage() {
                               </button>
                             )}
 
+                            {/* Pending or already rejected -> Reject.
+                                A rejected row keeps its Approve button too,
+                                so saying no can be taken back. */}
+                            {(isPending || isRejected) && !isSelf && !isSuper && (
+                              <button
+                                onClick={() =>
+                                  setConfirmModal({
+                                    isOpen: true,
+                                    type: "reject",
+                                    user: u,
+                                  })
+                                }
+                                disabled={actionLoading === u.id || isRejected}
+                                className="px-3 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 rounded-xl text-xs font-black uppercase tracking-wider transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+                              >
+                                {isRejected ? "Rejected" : "Reject"}
+                              </button>
+                            )}
+
+                            {/* A rejected account can be let back in. */}
+                            {isRejected && (
+                              <button
+                                onClick={() =>
+                                  setConfirmModal({
+                                    isOpen: true,
+                                    type: "approve",
+                                    user: u,
+                                  })
+                                }
+                                disabled={actionLoading === u.id}
+                                className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-sm transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+                              >
+                                Approve Anyway
+                              </button>
+                            )}
+
                             {/* Approved Member -> Promote to Admin Button */}
                             {!isAdminUser && isApproved && !isSelf && (
                               <button
@@ -601,7 +662,8 @@ export default function AdminMembersPage() {
                 className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center mb-4 ${
                   confirmModal.type === "promote"
                     ? "bg-amber-100 text-amber-600"
-                    : confirmModal.type === "demote"
+                    : confirmModal.type === "demote" ||
+                      confirmModal.type === "reject"
                     ? "bg-rose-100 text-rose-600"
                     : "bg-emerald-100 text-emerald-600"
                 }`}
@@ -610,6 +672,8 @@ export default function AdminMembersPage() {
                   <ShieldCheck size={28} />
                 ) : confirmModal.type === "demote" ? (
                   <ShieldAlert size={28} />
+                ) : confirmModal.type === "reject" ? (
+                  <XCircle size={28} />
                 ) : (
                   <CheckCircle size={28} />
                 )}
@@ -620,6 +684,8 @@ export default function AdminMembersPage() {
                   ? "Promote to Admin?"
                   : confirmModal.type === "demote"
                   ? "Demote to Member?"
+                  : confirmModal.type === "reject"
+                  ? "Reject this registration?"
                   : "Approve Member?"}
               </h3>
 
@@ -635,6 +701,14 @@ export default function AdminMembersPage() {
                     Are you sure you want to demote{" "}
                     <strong className="text-gray-900">{confirmModal.user.name}</strong> to a standard
                     club Member? Their admin privileges will be revoked immediately.
+                  </>
+                ) : confirmModal.type === "reject" ? (
+                  <>
+                    Reject the registration for{" "}
+                    <strong className="text-gray-900">{confirmModal.user.name}</strong>? They will be
+                    signed out and told their account was rejected rather than
+                    left waiting. You can approve them later if you change your
+                    mind.
                   </>
                 ) : (
                   <>
@@ -659,10 +733,11 @@ export default function AdminMembersPage() {
                   onClick={() => {
                     if (confirmModal.type === "promote") handlePromote(confirmModal.user!.id);
                     else if (confirmModal.type === "demote") handleDemote(confirmModal.user!.id);
+                    else if (confirmModal.type === "reject") handleReject(confirmModal.user!.id);
                     else handleApprove(confirmModal.user!.id);
                   }}
                   className={`flex-1 rounded-xl px-4 py-3 text-[11px] font-black uppercase tracking-wider text-white shadow-md transition-all sm:text-xs ${
-                    confirmModal.type === "demote"
+                    confirmModal.type === "demote" || confirmModal.type === "reject"
                       ? "bg-rose-600 hover:bg-rose-700"
                       : confirmModal.type === "promote"
                       ? "bg-[#f5b800] hover:bg-amber-600 text-black"
