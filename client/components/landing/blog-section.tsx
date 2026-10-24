@@ -10,6 +10,8 @@ import {
   useAnimationFrame,
   useInView,
 } from "framer-motion"
+import { Reveal } from "@/components/landing/Reveal"
+import { Magnetic } from "@/components/landing/Magnetic"
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowRight, PenTool, Eye, Send, Heart, MessageCircle, Hand } from "lucide-react"
@@ -140,16 +142,13 @@ export default function BlogLoopSection() {
           >
             {deck ? "Fresh off the board" : "Workflow"}
           </motion.span>
-          <motion.h2
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.15 }}
-            transition={{ duration: 0.45, delay: 0.05 }}
+          <Reveal
+            text="Explore Blogs"
+            accent="Blogs"
+            accentClassName="text-[#F2B200] italic"
+            delay={0.05}
             className="text-7xl md:text-8xl lg:text-9xl font-black leading-[0.85] tracking-tighter text-[#0B1220] uppercase"
-          >
-            Explore <br />
-            <span className="text-[#F2B200] italic">Blogs</span>
-          </motion.h2>
+          />
         </div>
 
         <motion.p
@@ -164,6 +163,7 @@ export default function BlogLoopSection() {
             : "Experience a focused writing → review → publish workflow designed for modern editorial teams."}
         </motion.p>
 
+        <Magnetic>
         <motion.button
           onClick={() => router.push('/blogs')}
           initial={{ opacity: 0, scale: 0.9 }}
@@ -176,6 +176,7 @@ export default function BlogLoopSection() {
           <ArrowRight className="relative z-10 w-6 h-6 group-hover:translate-x-2 transition-transform" />
           <div className="absolute inset-0 bg-[#F2B200] translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
         </motion.button>
+        </Magnetic>
       </div>
 
       {/* RIGHT ANIMATED AREA */}

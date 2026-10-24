@@ -5,6 +5,8 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight, BookOpen, Feather, Users } from "lucide-react";
 import SlotCounter from "@/components/SlotCounter";
+import { Reveal } from "@/components/landing/Reveal";
+import { Magnetic } from "@/components/landing/Magnetic";
 
 interface PlatformStats {
   totalUsers: number;
@@ -81,18 +83,22 @@ export default function LiveStats() {
                   Live from the club
                 </span>
               </div>
-              <h2 className="max-w-xl text-3xl font-black leading-[0.95] tracking-tighter text-white sm:text-5xl">
-                The numbers are <span className="text-[#F2B200]">real</span>.
-              </h2>
+              <Reveal
+                text="The numbers are real."
+                accent="real"
+                className="max-w-xl text-3xl font-black leading-[0.95] tracking-tighter text-white sm:text-5xl"
+              />
             </div>
 
-            <Link
-              href="/register"
-              className="group inline-flex w-fit items-center gap-3 rounded-full bg-[#F2B200] px-7 py-4 text-[11px] font-black uppercase tracking-widest text-[#0B1220] transition-transform hover:scale-[1.03] active:scale-95"
-            >
-              Add your story
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-            </Link>
+            <Magnetic className="w-fit">
+              <Link
+                href="/register"
+                className="group inline-flex w-fit items-center gap-3 rounded-full bg-[#F2B200] px-7 py-4 text-[11px] font-black uppercase tracking-widest text-[#0B1220] transition-transform hover:scale-[1.03] active:scale-95"
+              >
+                Add your story
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </Magnetic>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-6">
