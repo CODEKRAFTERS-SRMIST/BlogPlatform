@@ -124,7 +124,16 @@ export async function login(email, password) {
   const ok = await bcrypt.compare(password, user.password_hash);
 
   if (!ok) {
-    const attempts = user.failed_login_attempts + 1;
+    /*
+     * A lock that has run its course takes the count with it. Without this
+     * the counter stayed at five for ever once an account had been locked,
+     * so the first typo after the fifteen minutes were up took it to six and
+     * locked the account again on the spot - leaving anyone locked out once
+     * permanently one mistake away from being shut out again.
+     */
+    const lockHasExpired = user.lock_until !== null && user.lock_until <= new Date();
+    const previousAttempts = lockHasExpired ? 0 : user.failed_login_attempts;
+    const attempts = previousAttempts + 1;
     const lockUntil = attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null;
 
     await prisma.user.update({

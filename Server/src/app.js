@@ -16,6 +16,18 @@ dotenv.config();
 
 const app = express();
 
+/*
+ * Render puts a load balancer in front of this app, so the address on the
+ * socket is Render’s and the member’s real one arrives in X-Forwarded-For.
+ * Without this every visitor looks like one client to anything keyed on an
+ * address, and req.ip writes the proxy into the audit log instead of the
+ * person.
+ *
+ * One hop, not `true`. Trusting the whole chain would let a client write
+ * their own X-Forwarded-For header and step straight past any such limit.
+ */
+app.set("trust proxy", 1);
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
