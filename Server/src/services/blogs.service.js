@@ -145,6 +145,23 @@ export async function getByAuthor(authorId) {
       created_at: true,
       updated_at: true,
       rejection_reason: true,
+      /*
+       * The author, on the author's own stories.
+       *
+       * This select listed every column the library needs except this one,
+       * so each row arrived with no author at all and the mapper fell back
+       * to its last resort - every story in My Library was written by
+       * "Unknown", including the one you had just finished writing.
+       *
+       * Name and id only: the reader here is the author, and the email adds
+       * nothing to a page about your own work.
+       */
+      author: {
+        select: {
+          id: true,
+          name: true
+        }
+      },
       _count: {
         select: {
           likes: true,

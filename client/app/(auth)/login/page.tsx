@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mail, Lock, ChevronRight, User, ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
-import { authApi, handleApiError, isPendingApprovalError } from "@/lib/api";
+import { authApi, handleApiError, getAccountStandingFromError } from "@/lib/api";
 import { publishAuthUser, useAuth, refreshAuth, homeFor, User as AuthUser } from "@/lib/useAuth";
 import { resetSignedOutLatch } from "@/lib/api-client";
 import { GridPattern } from "@/components/background";
@@ -81,8 +81,11 @@ function LoginForm() {
       }
       router.replace(homeFor(response.user));
     } catch (err: any) {
-      if (isPendingApprovalError(err)) {
-        router.push("/pending");
+      const standing = getAccountStandingFromError(err);
+      if (standing) {
+        // The page reads this and says either "waiting" or "turned down",
+        // rather than telling a rejected member to keep waiting.
+        router.push(standing === "rejected" ? "/pending?status=rejected" : "/pending");
       } else {
         setError(handleApiError(err) || "Login failed. Please try again.");
       }

@@ -195,19 +195,29 @@ export function MyBlogsSection({
       transition={{ type: 'spring', damping: 25, stiffness: 260 }}
       className="w-full max-w-7xl"
     >
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 md:mb-12 gap-4">
-        <motion.h1 
+      {/*
+        * One row at every width, the title left and the write button right.
+        *
+        * This stacked on a phone - flex-col until md - which dropped the
+        * button onto its own line under the heading, floating against the
+        * left margin with nothing beside it. It read as something that had
+        * come loose rather than the page's main action.
+        */}
+      <div className="flex flex-row items-center justify-between gap-4 mb-8 md:mb-12">
+        <motion.h1
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          className="text-4xl md:text-5xl font-black text-gray-900 flex items-center gap-4"
+          className="text-3xl sm:text-4xl md:text-5xl font-black text-gray-900 flex items-center gap-2.5 sm:gap-4 min-w-0"
         >
-          <BookHeart className="text-[#f5b800] w-8 h-8 md:w-10 md:h-10" />
+          <BookHeart className="text-[#f5b800] w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 shrink-0" />
           My Library
         </motion.h1>
-        <motion.button 
+        <motion.button
           whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => setActiveSection('new')}
-          className="w-12 h-12 bg-black text-white rounded-full flex items-center justify-center shadow-lg"
+          aria-label="Write a new story"
+          className="w-12 h-12 shrink-0 bg-black text-white rounded-full flex items-center justify-center shadow-lg"
         >
           <PenTool size={20} />
         </motion.button>

@@ -101,9 +101,39 @@ export const handleApiError = (error: unknown): string => {
     if (error.response?.status === 409) return "An account or resource with these details already exists.";
     if (error.response?.status === 413) return "File size is too large. Please upload an image under 5MB.";
     if (error.response?.status === 429) return "Too many requests. Please wait a moment and try again.";
+    if (error.response?.status === 500) return "Something went wrong on the server. This one is not your fault - please try again in a moment.";
+    if (error.response?.status === 503) return "The server is starting up. Give it up to a minute and try again.";
+
+    /*
+     * No response at all.
+     *
+     * Axios reports every one of these as the same two words - "Network
+     * Error" - whether the server is asleep, the request was refused by
+     * CORS, or the phone has no signal. On screen that reads as "the whole
+     * site is broken", and it is the message people saw most often, for
+     * three completely different reasons with three different answers.
+     *
+     * There is no status to go on here, because nothing came back, so this
+     * says what is actually known and what to do about it rather than
+     * guessing at a cause.
+     */
+    if (!error.response) {
+      if (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT") {
+        return "The server took too long to answer. It may be waking up - please try again in a minute.";
+      }
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        return "You appear to be offline. Check your connection and try again.";
+      }
+      return "Could not reach the server. It may be starting up, or your connection dropped - please try again in a minute.";
+    }
+
+    // Nothing above matched: say the status rather than pretend to know more.
+    if (error.response.status) {
+      return `The server refused that request (error ${error.response.status}). Please try again, and tell an admin if it keeps happening.`;
+    }
   }
   if (error instanceof Error) return error.message;
-  return "Unable to connect to the server. Please check your network connection.";
+  return "Something went wrong. Please try again.";
 };
 
 /**
@@ -117,6 +147,24 @@ export const getApiErrorCode = (error: unknown): string | null => {
     if (typeof code === "string") return code;
   }
   return null;
+};
+
+/**
+ * Why an account was turned away, when that is the reason a call failed.
+ *
+ * "Waiting" and "refused" both arrive as a 403 and used to be treated as
+ * the same thing, so somebody who had been rejected was sent to a page
+ * saying their account was still being reviewed - and they would wait, and
+ * refresh, for a decision that had already been made.
+ */
+export const getAccountStandingFromError = (
+  error: unknown,
+): "pending" | "rejected" | null => {
+  const code = getApiErrorCode(error);
+  if (code === "ACCOUNT_REJECTED") return "rejected";
+  if (code === "PENDING_APPROVAL" || code === "NOT_APPROVED") return "pending";
+  // Older responses carry no code; fall back to the message.
+  return isPendingApprovalError(error) ? "pending" : null;
 };
 
 /** True when the failure was "this account is not approved yet". */

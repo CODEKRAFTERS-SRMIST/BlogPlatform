@@ -118,7 +118,22 @@ export async function login(email, password) {
     throw new AppError(`Account locked. Try again in ${minutesLeft} minutes`, 429, 'ACCOUNT_LOCKED');
   }
 
-  if (user.status !== 'approved') throw new AppError('Your account is awaiting admin approval', 403, 'PENDING_APPROVAL');
+  /*
+   * "Waiting" and "refused" are different answers, and telling somebody who
+   * has been turned down that their account is still being looked at leaves
+   * them refreshing a page that will never change. The code is what the
+   * browser reads; the message is what the person reads.
+   */
+  if (user.status !== 'approved') {
+    const rejected = user.status === 'rejected';
+    throw new AppError(
+      rejected
+        ? 'This account has been rejected and can no longer be used.'
+        : 'Your account is waiting for an admin to approve it.',
+      403,
+      rejected ? 'ACCOUNT_REJECTED' : 'PENDING_APPROVAL',
+    );
+  }
   if (!user.password_hash) throw new AppError('Password not set for this account. Please contact an admin.', 400, 'NO_PASSWORD');
 
   const ok = await bcrypt.compare(password, user.password_hash);

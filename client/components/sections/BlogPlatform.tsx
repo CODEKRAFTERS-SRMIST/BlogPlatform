@@ -274,7 +274,20 @@ export default function BlogPlatform() {
         submit: true,
       });
 
-      setPosts((prev) => [mapPost(created), ...prev]);
+      /*
+       * Deliberately not added to `posts`.
+       *
+       * `posts` is the public feed, which the server fills with published
+       * stories only. Dropping a freshly written one in here put a story
+       * nobody had approved yet in front of every reader - it appeared the
+       * moment you pressed Publish, survived until the next refresh, and
+       * then vanished, because the server had never agreed it belonged
+       * there. Opening it answered "Blog not available", which was the
+       * feed's fault rather than the story's.
+       *
+       * It goes to My Library instead, by way of the refetch below, where
+       * an author is meant to see their own unpublished work.
+       */
       try {
         await refetchMyPosts();
       } catch {
